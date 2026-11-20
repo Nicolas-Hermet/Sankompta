@@ -177,7 +177,11 @@ button.danger { color: var(--alerte); }
   <div class="entete-dlg"><h2>Gérer les catégories</h2><button id="g-fermer">Fermer</button></div>
 
   <h3>Catégories</h3>
-  <p class="aide">Renommez une catégorie, ou donnez-lui le nom d'une catégorie existante pour les fusionner (par exemple Bars → Restaurants).</p>
+  <p class="aide">Vos catégories (proposées quand vous catégorisez une opération) et celles du fichier. Renommez une catégorie, ou donnez-lui le nom d'une catégorie existante pour les fusionner (par exemple Bar → Restaurants).</p>
+  <form class="ligne-form" id="g-nouvelle">
+    <input id="g-nouvelle-nom" placeholder="Nouvelle catégorie…" required autocomplete="off">
+    <button type="submit">Ajouter à mes catégories</button>
+  </form>
   <table id="g-cats"></table>
 
   <h3>Fusions et renommages</h3>
@@ -513,7 +517,10 @@ function dessinerSankey(noeuds, nbCols) {
 const CLE_REGLES = 'sankompta.regles.v1';
 const normTexte = s => norm(s).replace(/\s+/g, ' ');
 const empreinte = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } return (h >>> 0).toString(36); };
-const reglesVides = () => ({ fusions: {}, motifs: [], operations: {} });
+// Catégories proposées par défaut (modifiables dans le gestionnaire)
+const CATEGORIES_DEFAUT = ['Alimentation', 'Enfant', 'Santé', 'Cafés', 'EDF', 'Essence', 'Maison', 'Restaurants', 'Téléphones',
+  'Internet', 'Parapharma', 'Cadeaux', 'Snacks', 'Loisir', 'Bar', 'Banque', 'Parking', 'Transports'];
+const reglesVides = () => ({ categories: [...CATEGORIES_DEFAUT], fusions: {}, motifs: [], operations: {} });
 function lireRegles(r) {
   const ok = r && typeof r === 'object' ? r : {};
   const chaines = o => Object.fromEntries(Object.entries(o && typeof o === 'object' ? o : {}).filter(([k, v]) => k && typeof v === 'string' && v.trim()));
@@ -522,6 +529,9 @@ function lireRegles(r) {
     motifs: (Array.isArray(ok.motifs) ? ok.motifs : []).filter(m => m && typeof m.texte === 'string' && m.texte.trim() && typeof m.categorie === 'string' && m.categorie.trim())
       .map(m => ({ texte: m.texte.trim(), categorie: m.categorie.trim() })),
     operations: chaines(ok.operations),
+    categories: Array.isArray(ok.categories)
+      ? [...new Set(ok.categories.filter(c => typeof c === 'string' && c.trim()).map(c => c.trim()))]
+      : [...CATEGORIES_DEFAUT],
   };
 }
 let regles = reglesVides();
@@ -552,7 +562,8 @@ function appliquerRegles() {
   $('liste-cats').innerHTML = toutesCategories().map(c => `<option value="${esc(c)}">`).join('');
 }
 
-const toutesCategories = () => [...new Set([...etat.ops.map(o => o.cat), ...regles.motifs.map(m => fusionner(m.categorie)),
+const ajouterALaListe = c => { if (c && c !== SANS_CAT && !regles.categories.includes(c)) regles.categories.push(c); };
+const toutesCategories = () => [...new Set([...regles.categories.map(fusionner), ...etat.ops.map(o => o.cat), ...regles.motifs.map(m => fusionner(m.categorie)),
   ...Object.values(regles.operations).map(fusionner)])].filter(c => c !== SANS_CAT).sort((a, b) => a.localeCompare(b, 'fr'));
 
 function origineTexte(o) {
@@ -597,6 +608,7 @@ $('form-op').addEventListener('submit', e => {
   e.preventDefault();
   const o = opEnCours, cat = $('op-cat').value.trim();
   if (!o || !cat) return;
+  ajouterALaListe(cat);
   if (document.querySelector('input[name=portee]:checked').value === 'motif') {
     const texte = $('op-motif').value.trim();
     if (!normTexte(texte)) { $('op-motif').focus(); return; }
@@ -619,12 +631,18 @@ function dessinerGestion() {
   const C = { classer: css('--c-classer'), autre: css('--s-autre') };
   const couleur = c => c === SANS_CAT ? C.classer : etat.couleurs[c] ? css(etat.couleurs[c]) : C.autre;
   const stats = {};
+  regles.categories.forEach(c => stats[fusionner(c)] ??= { n: 0, v: 0 });
   etat.ops.forEach(o => { stats[o.cat] ??= { n: 0, v: 0 }; stats[o.cat].n++; stats[o.cat].v += o.debit - o.credit; });
-  $('g-cats').innerHTML = `<tr><th>Catégorie</th><th class="num">Opérations</th><th class="num">Solde</th><th>Renommer ou fusionner dans</th></tr>` +
-    Object.entries(stats).sort((a, b) => a[0].localeCompare(b[0], 'fr')).map(([c, s]) =>
-      `<tr><td><span class="nom"><span class="pastille" style="background:${couleur(c)}"></span>${esc(c)}</span></td><td class="num">${s.n}</td>
-       <td class="num">${s.v > 0 ? '−' : '+'}${eur(Math.abs(s.v))}</td>
-       <td><form class="ligne-form g-renommer" data-cat="${esc(c)}"><input list="liste-cats" placeholder="Nouveau nom…" required autocomplete="off"><button type="submit">OK</button></form></td></tr>`).join('');
+  $('g-cats').innerHTML = `<tr><th>Catégorie</th><th class="num">Opérations</th><th class="num">Solde</th><th>Renommer ou fusionner dans</th><th></th></tr>` +
+    Object.entries(stats).sort((a, b) => a[0].localeCompare(b[0], 'fr')).map(([c, s]) => {
+      const liste = regles.categories.includes(c);
+      return `<tr><td><span class="nom"><span class="pastille" style="background:${couleur(c)}"></span>${esc(c)}</span></td><td class="num">${s.n || '—'}</td>
+       <td class="num">${s.n ? `${s.v > 0 ? '−' : '+'}${eur(Math.abs(s.v))}` : ''}</td>
+       <td><form class="ligne-form g-renommer" data-cat="${esc(c)}"><input list="liste-cats" placeholder="Nouveau nom…" required autocomplete="off"><button type="submit">OK</button></form></td>
+       <td class="num">${c === SANS_CAT ? '' : liste
+         ? `<button class="lien-btn danger" data-retirer="${esc(c)}" title="Ne plus proposer cette catégorie (les opérations ne changent pas)">Retirer</button>`
+         : `<button class="lien-btn" data-garder="${esc(c)}" title="Proposer cette catégorie aussi pour les prochains fichiers">+ Mes catégories</button>`}</td></tr>`;
+    }).join('');
 
   const fusions = Object.entries(regles.fusions);
   $('g-fusions').innerHTML = fusions.length
@@ -651,9 +669,29 @@ $('g-cats').addEventListener('submit', e => {
   e.preventDefault();
   const de = e.target.dataset.cat, vers = e.target.querySelector('input').value.trim();
   if (!vers || vers === de) return;
-  // « vers » avait été fusionnée dans « de » : on défait cette fusion pour ne pas créer de boucle
-  if (fusionner(vers) === de) delete regles.fusions[vers];
-  regles.fusions[de] = vers;
+  const i = regles.categories.indexOf(de);
+  if (i >= 0) { if (regles.categories.includes(vers)) regles.categories.splice(i, 1); else regles.categories[i] = vers; }
+  else ajouterALaListe(vers);
+  const utilisee = etat.ops.some(o => o.cat === de) || regles.motifs.some(m => fusionner(m.categorie) === de)
+    || Object.values(regles.operations).some(c => fusionner(c) === de) || Object.values(regles.fusions).includes(de);
+  if (utilisee) {
+    // « vers » avait été fusionnée dans « de » : on défait cette fusion pour ne pas créer de boucle
+    if (fusionner(vers) === de) delete regles.fusions[vers];
+    regles.fusions[de] = vers;
+  }
+  majTout();
+});
+$('g-cats').addEventListener('click', e => {
+  const { retirer, garder } = e.target.dataset;
+  if (retirer !== undefined) regles.categories = regles.categories.filter(c => c !== retirer);
+  else if (garder !== undefined) ajouterALaListe(garder);
+  else return;
+  majTout();
+});
+$('g-nouvelle').addEventListener('submit', e => {
+  e.preventDefault();
+  ajouterALaListe($('g-nouvelle-nom').value.trim());
+  $('g-nouvelle-nom').value = '';
   majTout();
 });
 $('g-fusions').addEventListener('click', e => { const a = e.target.dataset.fusion; if (a !== undefined) { delete regles.fusions[a]; majTout(); } });
@@ -669,6 +707,7 @@ $('g-ajout').addEventListener('submit', e => {
   const texte = $('g-texte').value.trim(), categorie = $('g-cat').value.trim();
   if (!normTexte(texte) || !categorie) return;
   regles.motifs = [...regles.motifs.filter(m => normTexte(m.texte) !== normTexte(texte)), { texte, categorie }];
+  ajouterALaListe(categorie);
   $('g-texte').value = ''; $('g-cat').value = '';
   majTout();
 });
@@ -690,6 +729,7 @@ $('g-fichier').addEventListener('change', async e => {
     const r = lireRegles(JSON.parse(await f.text()));
     Object.assign(regles.fusions, r.fusions);
     Object.assign(regles.operations, r.operations);
+    r.categories.forEach(ajouterALaListe);
     const deja = new Set(regles.motifs.map(m => normTexte(m.texte)));
     regles.motifs.push(...r.motifs.filter(m => !deja.has(normTexte(m.texte))));
     majTout();
@@ -697,7 +737,7 @@ $('g-fichier').addEventListener('change', async e => {
   } catch { alert('Ce fichier ne contient pas de règles lisibles (JSON exporté par cette page).'); }
 });
 $('g-reset').addEventListener('click', () => {
-  if (confirm('Effacer toutes les fusions, règles et catégorisations enregistrées dans ce navigateur ?')) { regles = reglesVides(); majTout(); }
+  if (confirm('Effacer toutes les fusions, règles et catégorisations enregistrées dans ce navigateur, et revenir aux catégories par défaut ?')) { regles = reglesVides(); majTout(); }
 });
 
 // ---------- Événements ----------
