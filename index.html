@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dépenses par catégorie</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --border: rgba(11,11,11,0.10); --accent: #2a78d6; --alerte: #b25e00;
+  --c-total: #898781; --c-classer: #fab219;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948; --s-autre: #a9a7a0;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --border: rgba(255,255,255,0.10); --accent: #3987e5; --alerte: #f0a54a;
+    --c-total: #898781; --c-classer: #fab219;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #0ca30c; --s7: #9085e9; --s8: #e66767; --s-autre: #6f6e69;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --border: rgba(255,255,255,0.10); --accent: #3987e5; --alerte: #f0a54a;
+  --c-total: #898781; --c-classer: #fab219;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #0ca30c; --s7: #9085e9; --s8: #e66767; --s-autre: #6f6e69;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1280px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+.sous-titre { color: var(--ink-2); margin: 0 0 16px; }
+.barre { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; margin-bottom: 16px; }
+select, label, button { font: inherit; color: var(--ink); }
+select { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
+button { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+button.principal { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; padding: 8px 16px; }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cache { display: none !important; }
+.accueil { background: var(--surface); border: 1.5px dashed var(--grid); border-radius: 12px; padding: 28px 20px; text-align: center; }
+.accueil p { color: var(--ink-2); margin: 10px 0 0; }
+body.survol .accueil, body.survol .carte { border-color: var(--accent); }
+.format { margin: 20px auto 0; max-width: 640px; text-align: left; }
+.format table { font-size: 13px; }
+.erreur { color: var(--alerte); margin: 12px 0 0; }
+.tuiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tuile { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.tuile .lib { color: var(--ink-2); font-size: 13px; }
+.tuile .val { font-size: 24px; font-weight: 600; margin-top: 2px; }
+.tuile .det { color: var(--ink-2); font-size: 13px; }
+.carte { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 8px; overflow-x: auto; }
+.vide { color: var(--ink-2); padding: 40px; text-align: center; }
+#sankey svg { display: block; min-width: 720px; width: 100%; height: auto; }
+#sankey text { fill: var(--ink); font-size: 12px; }
+#sankey text .montant { fill: var(--ink-2); }
+#sankey path.lien { fill: none; transition: stroke-opacity .12s; }
+#sankey .attenue path.lien { stroke-opacity: .08 !important; }
+#sankey .attenue path.lien.actif { stroke-opacity: .55 !important; }
+#sankey .cliquable { cursor: pointer; }
+#bulle { position: fixed; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--grid);
+  border-radius: 8px; padding: 6px 10px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.12); display: none; z-index: 10; }
+#bulle b { display: block; }
+.note { color: var(--ink-2); font-size: 13px; margin-top: 12px; }
+table { width: 100%; border-collapse: collapse; margin-top: 8px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+td.num, th.num { text-align: right; white-space: nowrap; }
+td.date { white-space: nowrap; color: var(--ink-2); }
+tr.cat td { font-weight: 600; }
+tr.cat { cursor: pointer; }
+tr.cat:hover td { background: var(--page); }
+tr.cat.choisi td { background: var(--page); }
+tr.sous td:first-child { padding-left: 24px; color: var(--ink-2); }
+.legende { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 10px; font-size: 13px; color: var(--ink-2); }
+.legende span, td .nom { display: inline-flex; align-items: center; gap: 6px; }
+.pastille { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+details { margin-top: 20px; }
+summary { cursor: pointer; font-weight: 600; }
+.filtre { font-weight: 400; color: var(--ink-2); margin-left: 8px; }
+.filtre button { padding: 2px 8px; font-size: 13px; margin-left: 6px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Dépenses par catégorie</h1>
+  <p class="sous-titre" id="sous-titre">Choisissez un relevé (CSV) pour afficher ses dépenses par catégorie.</p>
+  <input type="file" id="fichier" accept=".csv,.tsv,.txt,text/csv,text/plain" class="cache">
+
+  <section id="accueil" class="accueil">
+    <button class="principal" id="choisir">Choisir un fichier…</button>
+    <p>ou déposez-le sur cette page. Le fichier est lu dans le navigateur et n'est envoyé nulle part.</p>
+    <p class="erreur cache" id="erreur-accueil"></p>
+    <div class="format">
+      <p><b>Format attendu :</b> un CSV (séparateur « ; », « , » ou tabulation), une ligne par opération :</p>
+      <table>
+        <tr><th>Date</th><th>Catégorie</th><th>Libellé</th><th class="num">Débit</th><th class="num">Crédit</th></tr>
+        <tr><td>03/10/2026</td><td>Courses</td><td>Carte Supermarché</td><td class="num">54,20</td><td class="num"></td></tr>
+        <tr><td>05/10/2026</td><td>Revenus</td><td>Salaire octobre</td><td class="num"></td><td class="num">2 500,00</td></tr>
+      </table>
+      <p>Si la première ligne contient des titres (Date, Catégorie, Libellé, Débit, Crédit, et en option Sous-catégorie ou Montant), les colonnes peuvent être dans n'importe quel ordre. Sans titres, l'ordre ci-dessus est utilisé. Dates en JJ/MM/AAAA ou AAAA-MM-JJ ; montants avec virgule ou point.</p>
+    </div>
+  </section>
+
+  <section id="vue" class="cache">
+    <div class="barre">
+      <label>Mois <select id="periode"></select></label>
+      <label id="lab-sous" class="cache"><input type="checkbox" id="sous"> Sous-catégories</label>
+      <button id="changer">Changer de fichier…</button>
+    </div>
+    <p class="erreur cache" id="erreur-vue"></p>
+    <div class="tuiles" id="tuiles"></div>
+    <div class="legende" id="legende"></div>
+    <div class="carte"><div id="sankey"></div></div>
+    <p class="note" id="note"></p>
+    <details open>
+      <summary>Dépenses par catégorie</summary>
+      <table id="tableau"></table>
+    </details>
+    <details open>
+      <summary>Opérations <span class="filtre" id="filtre"></span></summary>
+      <table id="operations"></table>
+    </details>
+  </section>
+  <div id="bulle"></div>
+</main>
+<script>
+const eur = v => v.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+const eur2 = v => v ? v.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
+const pct = (v, t) => (100 * v / t).toFixed(1).replace('.', ',') + ' %';
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+const NOMS_MOIS = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+const nomMois = m => { const [a, n] = m.split('-'); return `${NOMS_MOIS[+n - 1]} ${a}`; };
+const dateFr = d => d.split('-').reverse().join('/');
+const norm = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+const $ = id => document.getElementById(id);
+const SANS_CAT = 'Sans catégorie';
+
+const etat = { ops: [], mois: [], couleurs: {}, aSous: false, filtre: null, nom: '' };
+const sel = $('periode');
+
+// ---------- Lecture du fichier ----------
+function decoder(buf) {
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+  catch { return new TextDecoder('windows-1252').decode(buf); }   // exports bancaires en ANSI
+}
+
+function lireCsv(texte) {
+  texte = texte.replace(/^﻿/, '');
+  const premiere = texte.split(/\r?\n/).find(l => l.trim() && !l.trim().startsWith('#')) || '';
+  const compter = c => { let n = 0, q = false; for (const ch of premiere) { if (ch === '"') q = !q; else if (ch === c && !q) n++; } return n; };
+  const sep = [';', '\t', ','].reduce((a, b) => compter(b) > compter(a) ? b : a);
+  const lignes = [];
+  let ligne = [], champ = '', q = false, num = 1, debut = 1;
+  for (let i = 0; i < texte.length; i++) {
+    const ch = texte[i];
+    if (q) {
+      if (ch === '"') { if (texte[i + 1] === '"') { champ += '"'; i++; } else q = false; }
+      else { if (ch === '\n') num++; champ += ch; }
+    } else if (ch === '"') q = true;
+    else if (ch === sep) { ligne.push(champ); champ = ''; }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && texte[i + 1] === '\n') i++;
+      ligne.push(champ); lignes.push({ num: debut, cells: ligne });
+      ligne = []; champ = ''; num++; debut = num;
+    } else champ += ch;
+  }
+  if (champ || ligne.length) { ligne.push(champ); lignes.push({ num: debut, cells: ligne }); }
+  return lignes.filter(l => l.cells.some(c => c.trim()) && !l.cells[0].trim().startsWith('#'));
+}
+
+function colonnes(entete) {
+  const h = entete.map(norm), pris = new Set();
+  const trouver = (rx, sauf) => {
+    const i = h.findIndex((x, j) => !pris.has(j) && rx.test(x) && !(sauf && sauf.test(x)));
+    if (i >= 0) pris.add(i);
+    return i;
+  };
+  const c = {};
+  c.date = trouver(/date/, /valeur/); if (c.date < 0) c.date = trouver(/date/);
+  c.sous = trouver(/sous.?cat/);
+  c.categorie = trouver(/categ/);
+  c.debit = trouver(/debit/);
+  c.credit = trouver(/credit/);
+  c.montant = c.debit < 0 && c.credit < 0 ? trouver(/montant|amount|somme/) : -1;
+  c.libelle = trouver(/libel|label|intitul|descri|operation|objet|detail/);
+  const manque = [];
+  if (c.date < 0) manque.push('Date');
+  if (c.categorie < 0) manque.push('Catégorie');
+  if (c.debit < 0 && c.credit < 0 && c.montant < 0) manque.push('Débit / Crédit (ou Montant)');
+  if (manque.length) throw new Error(`Colonne${manque.length > 1 ? 's' : ''} introuvable${manque.length > 1 ? 's' : ''} dans la ligne de titres : ${manque.join(', ')}.`);
+  return c;
+}
+
+function montant(s) {
+  s = (s || '').replace(/[\s  €]|EUR/gi, '');
+  if (!s) return 0;
+  let neg = false;
+  if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
+  const v = s.lastIndexOf(','), p = s.lastIndexOf('.');
+  if (v >= 0 && p >= 0) s = v > p ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
+  else if (v >= 0) s = s.replace(',', '.');
+  const n = Number(s);
+  return neg ? -n : n;
+}
+
+function lireDate(s) {
+  s = (s || '').trim();
+  let a, m, j, r;
+  if ((r = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/))) [, a, m, j] = r;
+  else if ((r = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4}|\d{2})(?!\d)/))) { [, j, m, a] = r; if (a.length === 2) a = '20' + a; }
+  else if (/^\d{5}(\.\d+)?$/.test(s)) {   // date Excel (nombre de jours depuis 1899-12-30)
+    const d = new Date(Date.UTC(1899, 11, 30) + Math.floor(+s) * 864e5);
+    [a, m, j] = [d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()];
+  } else return null;
+  [a, m, j] = [+a, +m, +j];
+  if (m < 1 || m > 12 || j < 1 || j > 31) return null;
+  return `${a}-${String(m).padStart(2, '0')}-${String(j).padStart(2, '0')}`;
+}
+
+async function charger(fichier) {
+  try {
+    const buf = await fichier.arrayBuffer();
+    const debut = new Uint8Array(buf.slice(0, 4));
+    if ((debut[0] === 0x50 && debut[1] === 0x4b) || (debut[0] === 0xd0 && debut[1] === 0xcf))
+      throw new Error('Ce fichier est un classeur Excel. Ouvrez-le et enregistrez-le au format CSV, puis choisissez le CSV.');
+    const lignes = lireCsv(decoder(buf));
+    if (!lignes.length) throw new Error('Le fichier est vide.');
+    let col, donnees = lignes;
+    // Ligne de titres : la première ligne ne contient aucune date
+    if (!lignes[0].cells.some(c => lireDate(c))) { col = colonnes(lignes[0].cells); donnees = lignes.slice(1); }
+    else col = { date: 0, categorie: 1, libelle: 2, debit: 3, credit: 4, sous: -1, montant: -1 };
+
+    const ops = [], rejets = [];
+    for (const { num, cells } of donnees) {
+      const g = i => i >= 0 ? (cells[i] ?? '').trim() : '';
+      const date = lireDate(g(col.date));
+      let debit, credit;
+      if (col.montant >= 0) { const v = montant(g(col.montant)); debit = v < 0 ? -v : 0; credit = v > 0 ? v : 0; }
+      else { debit = Math.abs(montant(g(col.debit))); credit = Math.abs(montant(g(col.credit))); }
+      if (!date || isNaN(debit) || isNaN(credit)) { rejets.push(num); continue; }
+      if (!debit && !credit) continue;
+      ops.push({ date, mois: date.slice(0, 7), cat: g(col.categorie) || SANS_CAT, sous: g(col.sous),
+                 lib: g(col.libelle).replace(/\s*\n\s*/g, ' · '), debit, credit });
+    }
+    if (!ops.length) throw new Error(`Aucune opération lisible dans ce fichier${rejets.length ? ` (${rejets.length} lignes avec une date ou un montant illisible)` : ''}.`);
+    ops.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+
+    // Une teinte par catégorie, fixée sur l'ensemble du fichier (les 8 plus grosses), le reste en gris
+    const net = {};
+    ops.forEach(o => net[o.cat] = (net[o.cat] || 0) + o.debit - o.credit);
+    const couleurs = {};
+    Object.entries(net).filter(([c, v]) => v > 0 && c !== SANS_CAT).sort((a, b) => b[1] - a[1])
+      .slice(0, 8).forEach(([c], i) => couleurs[c] = `--s${i + 1}`);
+
+    Object.assign(etat, { ops, rejets, couleurs, nom: fichier.name, filtre: null,
+                          mois: [...new Set(ops.map(o => o.mois))].sort(), aSous: col.sous >= 0 && ops.some(o => o.sous) });
+    sel.replaceChildren();
+    [...etat.mois].reverse().forEach(m => {
+      const n = ops.filter(o => o.mois === m).length;
+      sel.add(new Option(`${nomMois(m)} (${n} op.)`, m));
+    });
+    sel.add(new Option(`Moyenne mensuelle (${etat.mois.length} mois)`, 'moyenne'));
+    sel.add(new Option('Toute la période', 'tout'));
+    sel.value = etat.mois.at(-1);
+    $('lab-sous').classList.toggle('cache', !etat.aSous);
+    $('sous-titre').textContent = `${fichier.name} · ${ops.length} opération${ops.length > 1 ? 's' : ''} du ${dateFr(ops[0].date)} au ${dateFr(ops.at(-1).date)}`;
+    $('accueil').classList.add('cache');
+    $('vue').classList.remove('cache');
+    $('erreur-vue').classList.add('cache');
+    $('erreur-accueil').classList.add('cache');
+    dessiner();
+  } catch (e) {
+    const cible = etat.ops.length ? $('erreur-vue') : $('erreur-accueil');
+    cible.textContent = `Impossible de lire « ${fichier.name} » : ${e.message}`;
+    cible.classList.remove('cache');
+  }
+}
+
+// ---------- Affichage ----------
+function dessiner() {
+  const periode = sel.value, div = periode === 'moyenne' ? etat.mois.length : 1;
+  const ops = periode === 'moyenne' || periode === 'tout' ? etat.ops : etat.ops.filter(o => o.mois === periode);
+  const parCat = {};
+  ops.forEach(o => {
+    const s = etat.aSous && o.sous ? o.sous : '';
+    parCat[o.cat] ??= { v: 0, sous: {} };
+    parCat[o.cat].v += (o.debit - o.credit) / div;
+    parCat[o.cat].sous[s] = (parCat[o.cat].sous[s] || 0) + (o.debit - o.credit) / div;
+  });
+  const cats = Object.entries(parCat).filter(([, d]) => d.v >= 0.5).sort((a, b) => b[1].v - a[1].v);
+  const enCredit = Object.entries(parCat).filter(([, d]) => d.v <= -0.5).sort((a, b) => a[1].v - b[1].v);
+  const total = cats.reduce((a, [, d]) => a + d.v, 0);
+  if (etat.filtre && !parCat[etat.filtre]) etat.filtre = null;
+
+  const C = { total: css('--c-total'), classer: css('--c-classer'), autre: css('--s-autre') };
+  const couleur = c => c === SANS_CAT ? C.classer : etat.couleurs[c] ? css(etat.couleurs[c]) : C.autre;
+  const detail = etat.aSous && $('sous').checked;
+
+  // Sankey : dépenses -> catégories (-> sous-catégories)
+  if (cats.length) {
+    const noeuds = [], idx = {};
+    const noeud = (cle, nom, coul, col, cat) => { if (!(cle in idx)) { idx[cle] = noeuds.length; noeuds.push({ nom, coul, col, cat, entree: [], sortie: [] }); } return idx[cle]; };
+    const lien = (a, b, v, coul) => { const l = { v, coul }; noeuds[a].sortie.push(l); noeuds[b].entree.push(l); l.cible = noeuds[b]; };
+    const racine = noeud('total', periode === 'moyenne' ? 'Dépenses / mois' : 'Dépenses', C.total, 0);
+    cats.forEach(([c, d]) => {
+      const coul = couleur(c), n = noeud('c:' + c, c, coul, 1, c);
+      lien(racine, n, d.v, coul);
+      const sous = Object.entries(d.sous).filter(([s, v]) => s && v >= 0.5);
+      if (detail && sous.length) sous.sort((a, b) => b[1] - a[1]).forEach(([s, v]) => lien(n, noeud('s:' + c + ':' + s, s, coul, 2, c), v, coul));
+    });
+    dessinerSankey(noeuds, Math.max(...noeuds.map(n => n.col)) + 1);
+  } else $('sankey').innerHTML = '<p class="vide">Aucune dépense sur cette période.</p>';
+
+  // Légende
+  const autres = cats.filter(([c]) => !etat.couleurs[c] && c !== SANS_CAT).map(([c]) => c);
+  $('legende').innerHTML = cats.filter(([c]) => etat.couleurs[c] || c === SANS_CAT)
+    .map(([c]) => `<span><span class="pastille" style="background:${couleur(c)}"></span>${esc(c)}</span>`).join('') +
+    (autres.length ? `<span><span class="pastille" style="background:${C.autre}"></span>Autres (${esc(autres.join(', '))})</span>` : '');
+
+  // Tuiles
+  const nbDep = ops.filter(o => o.debit > 0).length;
+  const [grosNom, grosD] = cats[0] || ['—', { v: 0 }];
+  $('tuiles').innerHTML = [
+    [periode === 'moyenne' ? 'Dépenses par mois' : 'Dépenses', eur(total), `${cats.length} catégorie${cats.length > 1 ? 's' : ''}`],
+    ['Plus gros poste', eur(grosD.v), grosNom + (total ? ' · ' + pct(grosD.v, total) : '')],
+    ['Opérations au débit', String(periode === 'moyenne' ? Math.round(nbDep / div) : nbDep), periode === 'moyenne' ? 'en moyenne par mois' : `sur ${ops.length} opérations`],
+  ].map(([l, v, d]) => `<div class="tuile"><div class="lib">${l}</div><div class="val">${v}</div><div class="det">${esc(d)}</div></div>`).join('');
+
+  // Tableau des catégories (clic = filtre des opérations)
+  let h = `<tr><th>Catégorie</th><th class="num">Montant</th><th class="num">Part</th></tr>`;
+  cats.forEach(([c, d]) => {
+    h += `<tr class="cat${etat.filtre === c ? ' choisi' : ''}" data-cat="${esc(c)}" title="Voir les opérations"><td><span class="nom"><span class="pastille" style="background:${couleur(c)}"></span>${esc(c)}</span></td><td class="num">${eur(d.v)}</td><td class="num">${pct(d.v, total)}</td></tr>`;
+    if (detail) Object.entries(d.sous).filter(([s, v]) => s && v >= 0.5).sort((a, b) => b[1] - a[1]).forEach(([s, v]) =>
+      h += `<tr class="sous"><td>${esc(s)}</td><td class="num">${eur(v)}</td><td class="num">${pct(v, total)}</td></tr>`);
+  });
+  $('tableau').innerHTML = h;
+
+  // Note
+  const notes = [];
+  if (periode === 'moyenne') notes.push(`Moyenne : total de chaque catégorie divisé par ${etat.mois.length} mois (le premier et le dernier mois du fichier peuvent être incomplets).`);
+  notes.push('Les crédits d\'une catégorie de dépense (remboursements, avoirs) viennent en déduction de cette catégorie.');
+  if (enCredit.length) notes.push(`Non affichées car en crédit net : ${enCredit.map(([c, d]) => `${c} (+${eur(-d.v)})`).join(', ')}.`);
+  if (etat.rejets.length) notes.push(`${etat.rejets.length} ligne${etat.rejets.length > 1 ? 's' : ''} ignorée${etat.rejets.length > 1 ? 's' : ''} (date ou montant illisible) : ligne${etat.rejets.length > 1 ? 's' : ''} ${etat.rejets.slice(0, 8).join(', ')}${etat.rejets.length > 8 ? '…' : ''}.`);
+  $('note').textContent = notes.join(' ');
+
+  dessinerOperations(ops, couleur);
+}
+
+function dessinerOperations(ops, couleur) {
+  const liste = etat.filtre ? ops.filter(o => o.cat === etat.filtre) : ops;
+  $('filtre').innerHTML = etat.filtre
+    ? `· ${esc(etat.filtre)} (${liste.length})<button id="tout-voir">Tout afficher</button>`
+    : `· ${liste.length} — cliquez sur une catégorie pour filtrer`;
+  let h = `<tr><th>Date</th><th>Catégorie</th><th>Libellé</th><th class="num">Débit</th><th class="num">Crédit</th></tr>`;
+  liste.forEach(o => h += `<tr><td class="date">${dateFr(o.date)}</td><td><span class="nom"><span class="pastille" style="background:${couleur(o.cat)}"></span>${esc(o.cat)}${o.sous && etat.aSous ? ` › ${esc(o.sous)}` : ''}</span></td><td>${esc(o.lib)}</td><td class="num">${eur2(o.debit)}</td><td class="num">${eur2(o.credit)}</td></tr>`);
+  $('operations').innerHTML = h;
+}
+
+function filtrer(cat) {
+  etat.filtre = etat.filtre === cat ? null : cat;
+  dessiner();
+  if (etat.filtre) $('operations').closest('details').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function dessinerSankey(noeuds, nbCols) {
+  // Largeur réelle de la carte : le texte garde sa taille, quel que soit l'écran
+  const W = Math.max(720, Math.min(1240, $('sankey').clientWidth || 1240)), PAD = 6, EP = 12, G = 150, D = nbCols > 2 ? 260 : 300;
+  noeuds.forEach(n => n.v = Math.max(n.entree.reduce((a, l) => a + l.v, 0), n.sortie.reduce((a, l) => a + l.v, 0)));
+  const cols = Array.from({ length: nbCols }, (_, i) => noeuds.filter(n => n.col === i));
+  const H = Math.max(420, Math.max(...cols.map(c => c.length)) * 26);
+  const k = Math.min(...cols.filter(c => c.length).map(c => (H - PAD * 2 * (c.length - 1)) / c.reduce((a, n) => a + n.v, 0)));
+  const xs = Array.from({ length: nbCols }, (_, i) => G + i * (W - G - D) / (nbCols - 1));
+  cols.forEach((c, i) => {
+    let y = (H - c.reduce((a, n) => a + n.v * k, 0) - PAD * 2 * (c.length - 1)) / 2;
+    c.forEach(n => { n.x = xs[i]; n.y = y; n.h = Math.max(n.v * k, 1); y += n.h + PAD * 2; n.yo = n.y; n.yi = n.y; });
+  });
+  const ns = 'http://www.w3.org/2000/svg', el = (t, a) => { const e = document.createElementNS(ns, t); for (const [x, v] of Object.entries(a)) e.setAttribute(x, v); return e; };
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H + 8}`, role: 'img', 'aria-label': 'Diagramme de Sankey des dépenses par catégorie' });
+  const gL = el('g', {}), gN = el('g', {});
+  svg.append(gL, gN);
+  const bulle = $('bulle');
+  const montrer = (e, html) => { bulle.innerHTML = html; bulle.style.display = 'block'; bulle.style.left = (e.clientX + 14) + 'px'; bulle.style.top = (e.clientY + 14) + 'px'; };
+  const cacher = () => { bulle.style.display = 'none'; svg.classList.remove('attenue'); gL.querySelectorAll('.actif').forEach(p => p.classList.remove('actif')); };
+
+  noeuds.forEach(n => n.sortie.forEach(l => {
+    const c = l.cible, h = l.v * k, x0 = n.x + EP, x1 = c.x, y0 = n.yo + h / 2, y1 = c.yi + h / 2, xm = (x0 + x1) / 2;
+    n.yo += h; c.yi += h;
+    const p = el('path', { class: 'lien', d: `M${x0},${y0} C${xm},${y0} ${xm},${y1} ${x1},${y1}`, stroke: l.coul, 'stroke-opacity': 0.28, 'stroke-width': Math.max(h, 1) });
+    l.el = p;
+    p.addEventListener('mousemove', e => { svg.classList.add('attenue'); p.classList.add('actif'); montrer(e, `${esc(n.nom)} → ${esc(c.nom)}<b>${eur(l.v)}</b>`); });
+    p.addEventListener('mouseleave', cacher);
+    gL.append(p);
+  }));
+  noeuds.forEach(n => {
+    const zone = el('rect', { x: n.x - 4, y: n.y - 2, width: EP + 8, height: n.h + 4, fill: 'transparent' });
+    zone.addEventListener('mousemove', e => { svg.classList.add('attenue'); [...n.entree, ...n.sortie].forEach(l => l.el.classList.add('actif')); montrer(e, `${esc(n.nom)}<b>${eur(n.v)}</b>`); });
+    zone.addEventListener('mouseleave', cacher);
+    const gauche = n.col === 0;
+    const t = el('text', { x: gauche ? n.x - 6 : n.x + EP + 6, y: n.y + n.h / 2, 'dominant-baseline': 'middle', 'text-anchor': gauche ? 'end' : 'start' });
+    t.innerHTML = `${esc(n.nom)} <tspan class="montant">${eur(n.v)}</tspan>`;
+    if (n.cat) [zone, t].forEach(x => { x.classList.add('cliquable'); x.addEventListener('click', () => filtrer(n.cat)); });
+    gN.append(el('rect', { x: n.x, y: n.y, width: EP, height: n.h, rx: 3, fill: n.coul }), zone, t);
+  });
+  $('sankey').replaceChildren(svg);
+}
+
+// ---------- Événements ----------
+const ouvrir = () => $('fichier').click();
+$('choisir').addEventListener('click', ouvrir);
+$('changer').addEventListener('click', ouvrir);
+$('fichier').addEventListener('change', e => { if (e.target.files[0]) charger(e.target.files[0]); e.target.value = ''; });
+sel.addEventListener('change', () => { etat.filtre = null; dessiner(); });
+$('sous').addEventListener('change', dessiner);
+$('tableau').addEventListener('click', e => { const tr = e.target.closest('tr.cat'); if (tr) filtrer(tr.dataset.cat); });
+$('filtre').addEventListener('click', e => { if (e.target.id === 'tout-voir') { e.preventDefault(); filtrer(etat.filtre); } });
+document.addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('survol'); });
+document.addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.classList.remove('survol'); });
+document.addEventListener('drop', e => { e.preventDefault(); document.body.classList.remove('survol'); if (e.dataTransfer.files[0]) charger(e.dataTransfer.files[0]); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (etat.ops.length) dessiner(); });
+</script>
+</body>
+</html>

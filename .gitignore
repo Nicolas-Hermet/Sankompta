@@ -1,0 +1,8 @@
+# LISTE BLANCHE : tout est ignoré par défaut, seuls les fichiers listés ci-dessous sont publiés.
+# Les exports bancaires (*.xlsx), les CSV classés, les règles (qui contiennent des noms et
+# numéros de compte) et sankey.html (qui embarque toutes les opérations) ne doivent JAMAIS être versionnés.
+*
+!.gitignore
+!index.html
+!exemple_format.csv
+!README.md
