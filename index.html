@@ -81,6 +81,32 @@ details { margin-top: 20px; }
 summary { cursor: pointer; font-weight: 600; }
 .filtre { font-weight: 400; color: var(--ink-2); margin-left: 8px; }
 .filtre button { padding: 2px 8px; font-size: 13px; margin-left: 6px; }
+input[type=text], input:not([type]) { font: inherit; color: var(--ink); background: var(--page); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; min-width: 0; }
+input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button.cat-op { background: none; border: 1px solid transparent; padding: 2px 6px; margin: -3px -7px; text-align: left; border-radius: 6px; }
+button.cat-op:hover { border-color: var(--border); background: var(--page); }
+button.cat-op .crayon { color: var(--muted); font-size: 12px; margin-left: 4px; opacity: 0; }
+button.cat-op:hover .crayon, button.cat-op:focus-visible .crayon { opacity: 1; }
+.modif { display: block; color: var(--muted); font-size: 12px; font-weight: 400; margin-left: 16px; }
+dialog { background: var(--surface); color: var(--ink); border: 1px solid var(--border); border-radius: 12px; padding: 20px; width: min(680px, calc(100% - 32px)); max-height: calc(100% - 48px); box-shadow: 0 12px 40px rgba(0,0,0,.25); }
+dialog::backdrop { background: rgba(0,0,0,.45); }
+dialog h2 { font-size: 18px; margin: 0 0 12px; }
+dialog h3 { font-size: 15px; margin: 22px 0 6px; }
+dialog .aide { color: var(--ink-2); font-size: 13px; margin: 4px 0 8px; }
+dialog .resume { background: var(--page); border-radius: 8px; padding: 10px 12px; margin: 0 0 14px; font-size: 13px; }
+dialog .champ { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+dialog .choix { display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; }
+dialog .choix label { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+dialog .actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+dialog .actions .gauche { margin-right: auto; }
+dialog table td, dialog table th { padding: 5px 6px; font-size: 13px; vertical-align: middle; }
+dialog .ligne-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+dialog .ligne-form input { flex: 1 1 140px; }
+.entete-dlg { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.entete-dlg h2 { margin: 0; }
+button.lien-btn { background: none; border: none; color: var(--accent); padding: 2px 4px; }
+button.danger { color: var(--alerte); }
+.vide-liste { color: var(--muted); font-size: 13px; }
 </style>
 </head>
 <body>
@@ -108,6 +134,7 @@ summary { cursor: pointer; font-weight: 600; }
     <div class="barre">
       <label>Mois <select id="periode"></select></label>
       <label id="lab-sous" class="cache"><input type="checkbox" id="sous"> Sous-catégories</label>
+      <button id="gerer">Gérer les catégories…</button>
       <button id="changer">Changer de fichier…</button>
     </div>
     <p class="erreur cache" id="erreur-vue"></p>
@@ -126,6 +153,58 @@ summary { cursor: pointer; font-weight: 600; }
   </section>
   <div id="bulle"></div>
 </main>
+<datalist id="liste-cats"></datalist>
+
+<dialog id="dlg-op">
+  <form method="dialog" id="form-op">
+    <h2>Catégoriser l'opération</h2>
+    <div class="resume" id="op-resume"></div>
+    <label class="champ">Catégorie <input id="op-cat" list="liste-cats" required autocomplete="off"></label>
+    <div class="choix">
+      <label><input type="radio" name="portee" value="op" checked> Cette opération uniquement</label>
+      <label><input type="radio" name="portee" value="motif"> Toutes les opérations dont le libellé contient <input id="op-motif" autocomplete="off"></label>
+    </div>
+    <p class="aide" id="op-compte"></p>
+    <div class="actions">
+      <button type="button" class="gauche lien-btn" id="op-retablir">Revenir à la catégorie d'origine</button>
+      <button type="button" id="op-annuler">Annuler</button>
+      <button class="principal" type="submit">Enregistrer</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="dlg-gestion">
+  <div class="entete-dlg"><h2>Gérer les catégories</h2><button id="g-fermer">Fermer</button></div>
+
+  <h3>Catégories</h3>
+  <p class="aide">Renommez une catégorie, ou donnez-lui le nom d'une catégorie existante pour les fusionner (par exemple Bars → Restaurants).</p>
+  <table id="g-cats"></table>
+
+  <h3>Fusions et renommages</h3>
+  <div id="g-fusions"></div>
+
+  <h3>Règles par libellé</h3>
+  <p class="aide">Une opération dont le libellé contient le texte va dans la catégorie choisie (par exemple « Magasin U » → Maison). La première règle qui correspond l'emporte ; une opération catégorisée à la main passe avant les règles.</p>
+  <form class="ligne-form" id="g-ajout">
+    <input id="g-texte" placeholder="Le libellé contient…" required autocomplete="off">
+    <span>→</span>
+    <input id="g-cat" list="liste-cats" placeholder="Catégorie" required autocomplete="off">
+    <button type="submit">Ajouter la règle</button>
+  </form>
+  <table id="g-motifs"></table>
+
+  <h3>Opérations catégorisées une par une</h3>
+  <div id="g-manuels"></div>
+
+  <h3>Sauvegarde</h3>
+  <p class="aide">Les règles sont enregistrées dans ce navigateur seulement, et s'appliquent aussi aux prochains fichiers. Exportez-les pour les conserver ou les utiliser sur un autre appareil.</p>
+  <div class="ligne-form">
+    <button id="g-export">Exporter les règles</button>
+    <button id="g-import">Importer des règles…</button>
+    <button id="g-reset" class="danger">Tout effacer</button>
+    <input type="file" id="g-fichier" accept=".json,application/json" class="cache">
+  </div>
+</dialog>
 <script>
 const eur = v => v.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
 const eur2 = v => v ? v.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
@@ -266,21 +345,18 @@ async function charger(fichier) {
       if (!date || isNaN(debit) || isNaN(credit)) { rejets.push(num); continue; }
       if (!debit && !credit) continue;
       const lib = g(col.libelle).replace(/\s*\n\s*/g, ' · '), detail = g(col.detail).replace(/\s*\n\s*/g, ' · ');
-      ops.push({ date, mois: date.slice(0, 7), cat: g(col.categorie) || SANS_CAT, sous: g(col.sous),
-                 lib: lib || detail, detail: lib && detail !== lib ? detail : '', debit, credit });
+      const o = { date, mois: date.slice(0, 7), catOrig: g(col.categorie) || SANS_CAT, sousOrig: g(col.sous),
+                  lib: lib || detail, detail: lib && detail !== lib ? detail : '', debit, credit };
+      o.texte = normTexte(`${o.lib} ${o.detail}`);
+      o.cle = empreinte(`${o.date}|${o.lib}|${o.detail}|${o.debit}|${o.credit}|${o.catOrig}`);
+      ops.push(o);
     }
     if (!ops.length) throw new Error(`Aucune opération lisible dans ce fichier${rejets.length ? ` (${rejets.length} lignes avec une date ou un montant illisible)` : ''}.`);
     ops.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+    ops.forEach((o, i) => o.i = i);
 
-    // Une teinte par catégorie, fixée sur l'ensemble du fichier (les 8 plus grosses), le reste en gris
-    const net = {};
-    ops.forEach(o => net[o.cat] = (net[o.cat] || 0) + o.debit - o.credit);
-    const couleurs = {};
-    Object.entries(net).filter(([c, v]) => v > 0 && c !== SANS_CAT).sort((a, b) => b[1] - a[1])
-      .slice(0, 8).forEach(([c], i) => couleurs[c] = `--s${i + 1}`);
-
-    Object.assign(etat, { ops, rejets, couleurs, col, nom: fichier.name, filtre: null,
-                          mois: [...new Set(ops.map(o => o.mois))].sort(), aSous: col.sous >= 0 && ops.some(o => o.sous) });
+    Object.assign(etat, { ops, rejets, col, nom: fichier.name, filtre: null, mois: [...new Set(ops.map(o => o.mois))].sort() });
+    appliquerRegles();
     sel.replaceChildren();
     [...etat.mois].reverse().forEach(m => {
       const n = ops.filter(o => o.mois === m).length;
@@ -289,7 +365,6 @@ async function charger(fichier) {
     sel.add(new Option(`Moyenne mensuelle (${etat.mois.length} mois)`, 'moyenne'));
     sel.add(new Option('Toute la période', 'tout'));
     sel.value = etat.mois.at(-1);
-    $('lab-sous').classList.toggle('cache', !etat.aSous);
     $('sous-titre').textContent = `${fichier.name} · ${ops.length} opération${ops.length > 1 ? 's' : ''} du ${dateFr(ops[0].date)} au ${dateFr(ops.at(-1).date)}`;
     $('accueil').classList.add('cache');
     $('vue').classList.remove('cache');
@@ -368,6 +443,8 @@ function dessiner() {
   notes.push('Les crédits d\'une catégorie de dépense (remboursements, avoirs) viennent en déduction de cette catégorie.');
   if (enCredit.length) notes.push(`Non affichées car en crédit net : ${enCredit.map(([c, d]) => `${c} (+${eur(-d.v)})`).join(', ')}.`);
   if (etat.rejets.length) notes.push(`${etat.rejets.length} ligne${etat.rejets.length > 1 ? 's' : ''} ignorée${etat.rejets.length > 1 ? 's' : ''} (date ou montant illisible) : ligne${etat.rejets.length > 1 ? 's' : ''} ${etat.rejets.slice(0, 8).join(', ')}${etat.rejets.length > 8 ? '…' : ''}.`);
+  const nbModif = etat.ops.filter(o => o.source).length;
+  if (nbModif) notes.push(`${nbModif} opération${nbModif > 1 ? 's' : ''} du fichier ${nbModif > 1 ? 'ont' : 'a'} changé de catégorie grâce à vos règles.`);
   notes.push(`Colonnes lues : ${etat.col.utilisees.join(', ')}${etat.col.ignorees ? ` ; ${etat.col.ignorees} autre${etat.col.ignorees > 1 ? 's' : ''} ignorée${etat.col.ignorees > 1 ? 's' : ''}` : ''}.`);
   $('note').textContent = notes.join(' ');
 
@@ -378,9 +455,9 @@ function dessinerOperations(ops, couleur) {
   const liste = etat.filtre ? ops.filter(o => o.cat === etat.filtre) : ops;
   $('filtre').innerHTML = etat.filtre
     ? `· ${esc(etat.filtre)} (${liste.length})<button id="tout-voir">Tout afficher</button>`
-    : `· ${liste.length} — cliquez sur une catégorie pour filtrer`;
+    : `· ${liste.length} — cliquez sur une catégorie pour la changer`;
   let h = `<tr><th>Date</th><th>Catégorie</th><th>Libellé</th><th class="num">Débit</th><th class="num">Crédit</th></tr>`;
-  liste.forEach(o => h += `<tr><td class="date">${dateFr(o.date)}</td><td><span class="nom"><span class="pastille" style="background:${couleur(o.cat)}"></span>${esc(o.cat)}${o.sous && etat.aSous ? ` › ${esc(o.sous)}` : ''}</span></td><td>${esc(o.lib)}${o.detail ? `<div class="detail-lib">${esc(o.detail)}</div>` : ''}</td><td class="num">${eur2(o.debit)}</td><td class="num">${eur2(o.credit)}</td></tr>`);
+  liste.forEach(o => h += `<tr><td class="date">${dateFr(o.date)}</td><td><button class="cat-op" data-i="${o.i}" title="Changer la catégorie"><span class="nom"><span class="pastille" style="background:${couleur(o.cat)}"></span>${esc(o.cat)}${o.sous && etat.aSous ? ` › ${esc(o.sous)}` : ''}<span class="crayon" aria-hidden="true">✎</span></span></button>${o.source ? `<span class="modif">${esc(origineTexte(o))}</span>` : ''}</td><td>${esc(o.lib)}${o.detail ? `<div class="detail-lib">${esc(o.detail)}</div>` : ''}</td><td class="num">${eur2(o.debit)}</td><td class="num">${eur2(o.credit)}</td></tr>`);
   $('operations').innerHTML = h;
 }
 
@@ -431,6 +508,197 @@ function dessinerSankey(noeuds, nbCols) {
   });
   $('sankey').replaceChildren(svg);
 }
+
+// ---------- Règles de catégorisation (enregistrées dans ce navigateur) ----------
+const CLE_REGLES = 'sankompta.regles.v1';
+const normTexte = s => norm(s).replace(/\s+/g, ' ');
+const empreinte = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } return (h >>> 0).toString(36); };
+const reglesVides = () => ({ fusions: {}, motifs: [], operations: {} });
+function lireRegles(r) {
+  const ok = r && typeof r === 'object' ? r : {};
+  const chaines = o => Object.fromEntries(Object.entries(o && typeof o === 'object' ? o : {}).filter(([k, v]) => k && typeof v === 'string' && v.trim()));
+  return {
+    fusions: chaines(ok.fusions),
+    motifs: (Array.isArray(ok.motifs) ? ok.motifs : []).filter(m => m && typeof m.texte === 'string' && m.texte.trim() && typeof m.categorie === 'string' && m.categorie.trim())
+      .map(m => ({ texte: m.texte.trim(), categorie: m.categorie.trim() })),
+    operations: chaines(ok.operations),
+  };
+}
+let regles = reglesVides();
+try { regles = lireRegles(JSON.parse(localStorage.getItem(CLE_REGLES))); } catch { }
+function sauverRegles() { try { localStorage.setItem(CLE_REGLES, JSON.stringify(regles)); } catch { } }
+
+// Suit les fusions (A → B → C) sans boucler
+function fusionner(c) { const vus = new Set(); while (regles.fusions[c] && !vus.has(c)) { vus.add(c); c = regles.fusions[c]; } return c; }
+const motifPour = o => regles.motifs.find(m => o.texte.includes(normTexte(m.texte)));
+
+function appliquerRegles() {
+  for (const o of etat.ops) {
+    let cat = o.catOrig, sous = o.sousOrig, source = '', motif = null;
+    if (regles.operations[o.cle]) { cat = regles.operations[o.cle]; sous = ''; source = 'manuel'; }
+    else if ((motif = motifPour(o))) { cat = motif.categorie; sous = ''; source = 'regle'; }
+    const fin = fusionner(cat);
+    if (fin !== cat) { if (!sous) sous = cat; source ||= 'fusion'; }   // la catégorie fusionnée devient la sous-catégorie
+    Object.assign(o, { cat: fin, sous, source, motif: motif ? motif.texte : '' });
+  }
+  // Une teinte par catégorie, fixée sur l'ensemble du fichier (les 8 plus grosses), le reste en gris
+  const net = {};
+  etat.ops.forEach(o => net[o.cat] = (net[o.cat] || 0) + o.debit - o.credit);
+  etat.couleurs = {};
+  Object.entries(net).filter(([c, v]) => v > 0 && c !== SANS_CAT).sort((a, b) => b[1] - a[1])
+    .slice(0, 8).forEach(([c], i) => etat.couleurs[c] = `--s${i + 1}`);
+  etat.aSous = etat.ops.some(o => o.sous);
+  $('lab-sous').classList.toggle('cache', !etat.aSous);
+  $('liste-cats').innerHTML = toutesCategories().map(c => `<option value="${esc(c)}">`).join('');
+}
+
+const toutesCategories = () => [...new Set([...etat.ops.map(o => o.cat), ...regles.motifs.map(m => fusionner(m.categorie)),
+  ...Object.values(regles.operations).map(fusionner)])].filter(c => c !== SANS_CAT).sort((a, b) => a.localeCompare(b, 'fr'));
+
+function origineTexte(o) {
+  if (o.source === 'manuel') return `modifiée à la main · origine : ${o.catOrig}`;
+  if (o.source === 'regle') return `règle « ${o.motif} » · origine : ${o.catOrig}`;
+  return `fusion · origine : ${o.catOrig}`;
+}
+
+function majTout() {
+  sauverRegles();
+  appliquerRegles();
+  dessiner();
+  if ($('dlg-gestion').open) dessinerGestion();
+}
+
+// ----- Catégoriser une opération -----
+let opEnCours = null;
+function ouvrirOp(o) {
+  opEnCours = o;
+  const montantTxt = o.debit ? `−${eur2(o.debit)} €` : `+${eur2(o.credit)} €`;
+  $('op-resume').innerHTML = `<b>${esc(o.lib)}</b>${o.detail ? `<div class="detail-lib">${esc(o.detail)}</div>` : ''}
+    <div>${dateFr(o.date)} · ${montantTxt} · catégorie du fichier : ${esc(o.catOrig)}${o.sousOrig ? ` › ${esc(o.sousOrig)}` : ''}</div>
+    ${o.source ? `<div class="detail-lib">Actuellement : ${esc(o.cat)} (${esc(origineTexte(o).split(' · ')[0])})</div>` : ''}`;
+  $('op-cat').value = o.cat === SANS_CAT ? '' : o.cat;
+  $('op-motif').value = o.motif || motifSuggere(o.lib);
+  document.querySelector('input[name=portee][value=op]').checked = true;
+  $('op-retablir').classList.toggle('cache', !regles.operations[o.cle]);
+  compterMotif();
+  $('dlg-op').showModal();
+  $('op-cat').select();
+}
+// Propose la partie utile du libellé : sans « Paiement par carte - X1234 » ni la date en fin de libellé
+const motifSuggere = lib => lib.replace(/^(paiement par carte|prelevement|prélèvement|virement( émis| emis| reçu| recu)?( instantané)?|carte|cb)\s*[-:]?\s*(x\d{4}\s*)?/i, '')
+  .replace(/\s+\d{2}\/\d{2}(\/\d{2,4})?\b.*$/, '').trim() || lib;
+function compterMotif() {
+  const motif = document.querySelector('input[name=portee]:checked').value === 'motif';
+  const texte = normTexte($('op-motif').value);
+  const n = texte ? etat.ops.filter(o => o.texte.includes(texte)).length : 0;
+  $('op-compte').textContent = motif ? (texte ? `${n} opération${n > 1 ? 's' : ''} de ce fichier concernée${n > 1 ? 's' : ''}, ainsi que celles des prochains fichiers.` : 'Indiquez un texte.') : '';
+}
+$('form-op').addEventListener('submit', e => {
+  e.preventDefault();
+  const o = opEnCours, cat = $('op-cat').value.trim();
+  if (!o || !cat) return;
+  if (document.querySelector('input[name=portee]:checked').value === 'motif') {
+    const texte = $('op-motif').value.trim();
+    if (!normTexte(texte)) { $('op-motif').focus(); return; }
+    regles.motifs = [{ texte, categorie: cat }, ...regles.motifs.filter(m => normTexte(m.texte) !== normTexte(texte))];
+    // Les catégorisations à la main des opérations concernées laissent la place à la règle
+    etat.ops.filter(x => x.texte.includes(normTexte(texte))).forEach(x => delete regles.operations[x.cle]);
+  } else if (cat === o.catOrig && !motifPour(o)) delete regles.operations[o.cle];
+  else regles.operations[o.cle] = cat;
+  $('dlg-op').close();
+  majTout();
+});
+$('op-retablir').addEventListener('click', () => { delete regles.operations[opEnCours.cle]; $('dlg-op').close(); majTout(); });
+$('op-annuler').addEventListener('click', () => $('dlg-op').close());
+$('op-motif').addEventListener('input', () => { document.querySelector('input[name=portee][value=motif]').checked = true; compterMotif(); });
+document.querySelectorAll('input[name=portee]').forEach(r => r.addEventListener('change', compterMotif));
+$('operations').addEventListener('click', e => { const b = e.target.closest('button.cat-op'); if (b) ouvrirOp(etat.ops[+b.dataset.i]); });
+
+// ----- Gestionnaire de catégories -----
+function dessinerGestion() {
+  const C = { classer: css('--c-classer'), autre: css('--s-autre') };
+  const couleur = c => c === SANS_CAT ? C.classer : etat.couleurs[c] ? css(etat.couleurs[c]) : C.autre;
+  const stats = {};
+  etat.ops.forEach(o => { stats[o.cat] ??= { n: 0, v: 0 }; stats[o.cat].n++; stats[o.cat].v += o.debit - o.credit; });
+  $('g-cats').innerHTML = `<tr><th>Catégorie</th><th class="num">Opérations</th><th class="num">Solde</th><th>Renommer ou fusionner dans</th></tr>` +
+    Object.entries(stats).sort((a, b) => a[0].localeCompare(b[0], 'fr')).map(([c, s]) =>
+      `<tr><td><span class="nom"><span class="pastille" style="background:${couleur(c)}"></span>${esc(c)}</span></td><td class="num">${s.n}</td>
+       <td class="num">${s.v > 0 ? '−' : '+'}${eur(Math.abs(s.v))}</td>
+       <td><form class="ligne-form g-renommer" data-cat="${esc(c)}"><input list="liste-cats" placeholder="Nouveau nom…" required autocomplete="off"><button type="submit">OK</button></form></td></tr>`).join('');
+
+  const fusions = Object.entries(regles.fusions);
+  $('g-fusions').innerHTML = fusions.length
+    ? `<table>${fusions.map(([a, b]) => `<tr><td>${esc(a)}</td><td>→ ${esc(b)}${fusionner(b) !== b ? ` → ${esc(fusionner(b))}` : ''}</td><td class="num"><button class="lien-btn danger" data-fusion="${esc(a)}">Annuler</button></td></tr>`).join('')}</table>`
+    : '<p class="vide-liste">Aucune fusion pour l\'instant.</p>';
+
+  $('g-motifs').innerHTML = regles.motifs.length
+    ? `<tr><th>Le libellé contient</th><th>Catégorie</th><th class="num">Opérations</th><th></th></tr>` + regles.motifs.map((m, i) => {
+        const n = etat.ops.filter(o => o.source === 'regle' && normTexte(o.motif) === normTexte(m.texte)).length;
+        return `<tr><td>${esc(m.texte)}</td><td>${esc(m.categorie)}${fusionner(m.categorie) !== m.categorie ? ` → ${esc(fusionner(m.categorie))}` : ''}</td><td class="num">${n}</td>
+          <td class="num">${i ? `<button class="lien-btn" data-monter="${i}" title="Priorité plus haute">↑</button>` : ''}<button class="lien-btn danger" data-motif="${i}">Supprimer</button></td></tr>`;
+      }).join('')
+    : '<tr><td class="vide-liste">Aucune règle pour l\'instant.</td></tr>';
+
+  const nbManuels = Object.keys(regles.operations).length, ici = etat.ops.filter(o => o.source === 'manuel').length;
+  $('g-manuels').innerHTML = nbManuels
+    ? `<div class="ligne-form"><span>${nbManuels} opération${nbManuels > 1 ? 's' : ''} catégorisée${nbManuels > 1 ? 's' : ''} une par une (${ici} dans ce fichier).</span><button class="lien-btn danger" id="g-manuels-reset">Tout annuler</button></div>`
+    : '<p class="vide-liste">Aucune. Cliquez sur la catégorie d\'une opération, dans le tableau des opérations, pour la changer.</p>';
+}
+
+$('gerer').addEventListener('click', () => { dessinerGestion(); $('dlg-gestion').showModal(); });
+$('g-fermer').addEventListener('click', () => $('dlg-gestion').close());
+$('g-cats').addEventListener('submit', e => {
+  e.preventDefault();
+  const de = e.target.dataset.cat, vers = e.target.querySelector('input').value.trim();
+  if (!vers || vers === de) return;
+  // « vers » avait été fusionnée dans « de » : on défait cette fusion pour ne pas créer de boucle
+  if (fusionner(vers) === de) delete regles.fusions[vers];
+  regles.fusions[de] = vers;
+  majTout();
+});
+$('g-fusions').addEventListener('click', e => { const a = e.target.dataset.fusion; if (a !== undefined) { delete regles.fusions[a]; majTout(); } });
+$('g-motifs').addEventListener('click', e => {
+  const { motif, monter } = e.target.dataset;
+  if (motif !== undefined) regles.motifs.splice(+motif, 1);
+  else if (monter !== undefined) { const i = +monter; [regles.motifs[i - 1], regles.motifs[i]] = [regles.motifs[i], regles.motifs[i - 1]]; }
+  else return;
+  majTout();
+});
+$('g-ajout').addEventListener('submit', e => {
+  e.preventDefault();
+  const texte = $('g-texte').value.trim(), categorie = $('g-cat').value.trim();
+  if (!normTexte(texte) || !categorie) return;
+  regles.motifs = [...regles.motifs.filter(m => normTexte(m.texte) !== normTexte(texte)), { texte, categorie }];
+  $('g-texte').value = ''; $('g-cat').value = '';
+  majTout();
+});
+$('g-manuels').addEventListener('click', e => {
+  if (e.target.id === 'g-manuels-reset' && confirm('Annuler toutes les catégorisations faites opération par opération ?')) { regles.operations = {}; majTout(); }
+});
+$('g-export').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(regles, null, 2)], { type: 'application/json' }));
+  a.download = 'sankompta-regles.json';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+$('g-import').addEventListener('click', () => $('g-fichier').click());
+$('g-fichier').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  try {
+    const r = lireRegles(JSON.parse(await f.text()));
+    Object.assign(regles.fusions, r.fusions);
+    Object.assign(regles.operations, r.operations);
+    const deja = new Set(regles.motifs.map(m => normTexte(m.texte)));
+    regles.motifs.push(...r.motifs.filter(m => !deja.has(normTexte(m.texte))));
+    majTout();
+    alert(`Règles importées : ${Object.keys(r.fusions).length} fusion(s), ${r.motifs.length} règle(s) par libellé, ${Object.keys(r.operations).length} opération(s).`);
+  } catch { alert('Ce fichier ne contient pas de règles lisibles (JSON exporté par cette page).'); }
+});
+$('g-reset').addEventListener('click', () => {
+  if (confirm('Effacer toutes les fusions, règles et catégorisations enregistrées dans ce navigateur ?')) { regles = reglesVides(); majTout(); }
+});
 
 // ---------- Événements ----------
 const ouvrir = () => $('fichier').click();
