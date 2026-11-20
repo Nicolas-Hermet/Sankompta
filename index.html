@@ -68,6 +68,7 @@ table { width: 100%; border-collapse: collapse; margin-top: 8px; font-variant-nu
 th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
 td.num, th.num { text-align: right; white-space: nowrap; }
 td.date { white-space: nowrap; color: var(--ink-2); }
+.detail-lib { color: var(--ink-2); font-size: 12px; }
 tr.cat td { font-weight: 600; }
 tr.cat { cursor: pointer; }
 tr.cat:hover td { background: var(--page); }
@@ -93,13 +94,13 @@ summary { cursor: pointer; font-weight: 600; }
     <p>ou déposez-le sur cette page. Le fichier est lu dans le navigateur et n'est envoyé nulle part.</p>
     <p class="erreur cache" id="erreur-accueil"></p>
     <div class="format">
-      <p><b>Format attendu :</b> un CSV (séparateur « ; », « , » ou tabulation), une ligne par opération :</p>
+      <p><b>Format attendu :</b> un CSV (séparateur « ; », « , » ou tabulation) avec une ligne de titres, puis une ligne par opération :</p>
       <table>
         <tr><th>Date</th><th>Catégorie</th><th>Libellé</th><th class="num">Débit</th><th class="num">Crédit</th></tr>
         <tr><td>03/10/2026</td><td>Courses</td><td>Carte Supermarché</td><td class="num">54,20</td><td class="num"></td></tr>
         <tr><td>05/10/2026</td><td>Revenus</td><td>Salaire octobre</td><td class="num"></td><td class="num">2 500,00</td></tr>
       </table>
-      <p>Si la première ligne contient des titres (Date, Catégorie, Libellé, Débit, Crédit, et en option Sous-catégorie ou Montant), les colonnes peuvent être dans n'importe quel ordre. Sans titres, l'ordre ci-dessus est utilisé. Dates en JJ/MM/AAAA ou AAAA-MM-JJ ; montants avec virgule ou point.</p>
+      <p>Les colonnes sont reconnues <b>par leur nom</b>, dans n'importe quel ordre, et les colonnes en trop sont ignorées. Il faut au minimum <b>Date</b>, <b>Catégorie</b> et <b>Débit</b> / <b>Crédit</b> (ou une seule colonne <b>Montant</b>, négative pour les dépenses). <b>Libellé</b> et <b>Sous-catégorie</b> sont facultatives. Les noms peuvent varier : « Date opération », « Date de comptabilisation », « Libellé simplifié », « Sous catégorie »… Les lignes avant la ligne de titres (nom du compte, solde…) sont ignorées. Dates en JJ/MM/AAAA ou AAAA-MM-JJ ; montants avec virgule ou point, signe facultatif.</p>
     </div>
   </section>
 
@@ -149,7 +150,7 @@ function decoder(buf) {
 
 function lireCsv(texte) {
   texte = texte.replace(/^﻿/, '');
-  const premiere = texte.split(/\r?\n/).find(l => l.trim() && !l.trim().startsWith('#')) || '';
+  const premiere = texte.split(/\r?\n/).filter(l => l.trim() && !l.trim().startsWith('#')).slice(0, 20).join('\n');
   const compter = c => { let n = 0, q = false; for (const ch of premiere) { if (ch === '"') q = !q; else if (ch === c && !q) n++; } return n; };
   const sep = [';', '\t', ','].reduce((a, b) => compter(b) > compter(a) ? b : a);
   const lignes = [];
@@ -171,27 +172,51 @@ function lireCsv(texte) {
   return lignes.filter(l => l.cells.some(c => c.trim()) && !l.cells[0].trim().startsWith('#'));
 }
 
+// Noms de colonnes reconnus, du plus précis au plus large (comparés sans accents ni ponctuation)
+const CHAMPS = [
+  ['date', 'Date', [/^date$/, /^date (de l |d )?operation$/, /^date (de )?(comptabilisation|comptable)$/, /^(transaction )?date$/, /^date(?!.*valeur)/, /date(?!.*valeur)/]],
+  ['sous', 'Sous-catégorie', [/^sous ?categorie$/, /sous ?categ|sub ?categ/]],
+  ['categorie', 'Catégorie', [/^categorie$/, /^category$/, /^categ/, /categ/]],
+  ['debit', 'Débit', [/^debit$/, /^debit/, /debit/]],
+  ['credit', 'Crédit', [/^credit$/, /^credit/, /credit/]],
+  ['montant', 'Montant', [/^montant$/, /^amount$/, /^montant|^amount/, /montant|amount/]],
+  ['libelle', 'Libellé', [/^libelle simplifie$/, /^libelle$/, /^libelle (de l )?operation$/, /^(label|description|intitule|wording)$/, /libelle|label|intitule|description/]],
+  ['detail', 'Détail', [/libelle|label|intitule|description/]],
+];
+const normTitre = s => norm(s).replace(/[_\-'’.:/()]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+// Associe chaque champ utile à une colonne de la ligne de titres ; les autres colonnes sont ignorées
 function colonnes(entete) {
-  const h = entete.map(norm), pris = new Set();
-  const trouver = (rx, sauf) => {
-    const i = h.findIndex((x, j) => !pris.has(j) && rx.test(x) && !(sauf && sauf.test(x)));
-    if (i >= 0) pris.add(i);
-    return i;
-  };
-  const c = {};
-  c.date = trouver(/date/, /valeur/); if (c.date < 0) c.date = trouver(/date/);
-  c.sous = trouver(/sous.?cat/);
-  c.categorie = trouver(/categ/);
-  c.debit = trouver(/debit/);
-  c.credit = trouver(/credit/);
-  c.montant = c.debit < 0 && c.credit < 0 ? trouver(/montant|amount|somme/) : -1;
-  c.libelle = trouver(/libel|label|intitul|descri|operation|objet|detail/);
-  const manque = [];
-  if (c.date < 0) manque.push('Date');
-  if (c.categorie < 0) manque.push('Catégorie');
-  if (c.debit < 0 && c.credit < 0 && c.montant < 0) manque.push('Débit / Crédit (ou Montant)');
-  if (manque.length) throw new Error(`Colonne${manque.length > 1 ? 's' : ''} introuvable${manque.length > 1 ? 's' : ''} dans la ligne de titres : ${manque.join(', ')}.`);
+  const h = entete.map(normTitre), pris = new Set(), c = {};
+  for (const [champ, , motifs] of CHAMPS) {
+    c[champ] = -1;
+    for (const rx of motifs) {
+      const i = h.findIndex((x, j) => x && !pris.has(j) && rx.test(x));
+      if (i >= 0) { c[champ] = i; pris.add(i); break; }
+    }
+  }
+  if (c.debit >= 0 || c.credit >= 0) { if (c.montant >= 0) pris.delete(c.montant); c.montant = -1; }
+  c.manque = [];
+  if (c.date < 0) c.manque.push('Date');
+  if (c.categorie < 0) c.manque.push('Catégorie');
+  if (c.debit < 0 && c.credit < 0 && c.montant < 0) c.manque.push('Débit / Crédit (ou Montant)');
+  c.trouves = 3 - c.manque.length;
+  c.utilisees = CHAMPS.filter(([champ]) => c[champ] >= 0).map(([champ, nom]) => `${nom} ← « ${entete[c[champ]].trim()} »`);
+  c.ignorees = entete.filter((x, j) => x.trim() && !pris.has(j)).length;
   return c;
+}
+
+// La ligne de titres est la première (parmi les 30 premières) qui nomme toutes les colonnes nécessaires
+function trouverEntete(lignes) {
+  let meilleur = null;
+  for (let i = 0; i < Math.min(30, lignes.length); i++) {
+    const c = colonnes(lignes[i].cells);
+    if (!c.manque.length) return { col: c, index: i };
+    if (!meilleur || c.trouves > meilleur.trouves) meilleur = c;
+  }
+  if (meilleur && meilleur.trouves > 0)
+    throw new Error(`Colonne${meilleur.manque.length > 1 ? 's' : ''} introuvable${meilleur.manque.length > 1 ? 's' : ''} : ${meilleur.manque.join(', ')}. Vérifiez les noms dans la ligne de titres.`);
+  throw new Error('Aucune ligne de titres trouvée. Le fichier doit commencer par une ligne qui nomme les colonnes : Date, Catégorie, Libellé, Débit, Crédit (ou Montant).');
 }
 
 function montant(s) {
@@ -228,10 +253,8 @@ async function charger(fichier) {
       throw new Error('Ce fichier est un classeur Excel. Ouvrez-le et enregistrez-le au format CSV, puis choisissez le CSV.');
     const lignes = lireCsv(decoder(buf));
     if (!lignes.length) throw new Error('Le fichier est vide.');
-    let col, donnees = lignes;
-    // Ligne de titres : la première ligne ne contient aucune date
-    if (!lignes[0].cells.some(c => lireDate(c))) { col = colonnes(lignes[0].cells); donnees = lignes.slice(1); }
-    else col = { date: 0, categorie: 1, libelle: 2, debit: 3, credit: 4, sous: -1, montant: -1 };
+    const { col, index } = trouverEntete(lignes);
+    const donnees = lignes.slice(index + 1);
 
     const ops = [], rejets = [];
     for (const { num, cells } of donnees) {
@@ -242,8 +265,9 @@ async function charger(fichier) {
       else { debit = Math.abs(montant(g(col.debit))); credit = Math.abs(montant(g(col.credit))); }
       if (!date || isNaN(debit) || isNaN(credit)) { rejets.push(num); continue; }
       if (!debit && !credit) continue;
+      const lib = g(col.libelle).replace(/\s*\n\s*/g, ' · '), detail = g(col.detail).replace(/\s*\n\s*/g, ' · ');
       ops.push({ date, mois: date.slice(0, 7), cat: g(col.categorie) || SANS_CAT, sous: g(col.sous),
-                 lib: g(col.libelle).replace(/\s*\n\s*/g, ' · '), debit, credit });
+                 lib: lib || detail, detail: lib && detail !== lib ? detail : '', debit, credit });
     }
     if (!ops.length) throw new Error(`Aucune opération lisible dans ce fichier${rejets.length ? ` (${rejets.length} lignes avec une date ou un montant illisible)` : ''}.`);
     ops.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
@@ -255,7 +279,7 @@ async function charger(fichier) {
     Object.entries(net).filter(([c, v]) => v > 0 && c !== SANS_CAT).sort((a, b) => b[1] - a[1])
       .slice(0, 8).forEach(([c], i) => couleurs[c] = `--s${i + 1}`);
 
-    Object.assign(etat, { ops, rejets, couleurs, nom: fichier.name, filtre: null,
+    Object.assign(etat, { ops, rejets, couleurs, col, nom: fichier.name, filtre: null,
                           mois: [...new Set(ops.map(o => o.mois))].sort(), aSous: col.sous >= 0 && ops.some(o => o.sous) });
     sel.replaceChildren();
     [...etat.mois].reverse().forEach(m => {
@@ -344,6 +368,7 @@ function dessiner() {
   notes.push('Les crédits d\'une catégorie de dépense (remboursements, avoirs) viennent en déduction de cette catégorie.');
   if (enCredit.length) notes.push(`Non affichées car en crédit net : ${enCredit.map(([c, d]) => `${c} (+${eur(-d.v)})`).join(', ')}.`);
   if (etat.rejets.length) notes.push(`${etat.rejets.length} ligne${etat.rejets.length > 1 ? 's' : ''} ignorée${etat.rejets.length > 1 ? 's' : ''} (date ou montant illisible) : ligne${etat.rejets.length > 1 ? 's' : ''} ${etat.rejets.slice(0, 8).join(', ')}${etat.rejets.length > 8 ? '…' : ''}.`);
+  notes.push(`Colonnes lues : ${etat.col.utilisees.join(', ')}${etat.col.ignorees ? ` ; ${etat.col.ignorees} autre${etat.col.ignorees > 1 ? 's' : ''} ignorée${etat.col.ignorees > 1 ? 's' : ''}` : ''}.`);
   $('note').textContent = notes.join(' ');
 
   dessinerOperations(ops, couleur);
@@ -355,7 +380,7 @@ function dessinerOperations(ops, couleur) {
     ? `· ${esc(etat.filtre)} (${liste.length})<button id="tout-voir">Tout afficher</button>`
     : `· ${liste.length} — cliquez sur une catégorie pour filtrer`;
   let h = `<tr><th>Date</th><th>Catégorie</th><th>Libellé</th><th class="num">Débit</th><th class="num">Crédit</th></tr>`;
-  liste.forEach(o => h += `<tr><td class="date">${dateFr(o.date)}</td><td><span class="nom"><span class="pastille" style="background:${couleur(o.cat)}"></span>${esc(o.cat)}${o.sous && etat.aSous ? ` › ${esc(o.sous)}` : ''}</span></td><td>${esc(o.lib)}</td><td class="num">${eur2(o.debit)}</td><td class="num">${eur2(o.credit)}</td></tr>`);
+  liste.forEach(o => h += `<tr><td class="date">${dateFr(o.date)}</td><td><span class="nom"><span class="pastille" style="background:${couleur(o.cat)}"></span>${esc(o.cat)}${o.sous && etat.aSous ? ` › ${esc(o.sous)}` : ''}</span></td><td>${esc(o.lib)}${o.detail ? `<div class="detail-lib">${esc(o.detail)}</div>` : ''}</td><td class="num">${eur2(o.debit)}</td><td class="num">${eur2(o.credit)}</td></tr>`);
   $('operations').innerHTML = h;
 }
 
