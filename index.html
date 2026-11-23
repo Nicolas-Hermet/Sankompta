@@ -53,12 +53,12 @@ body.survol .accueil, body.survol .carte { border-color: var(--accent); }
 .tuile .det { color: var(--ink-2); font-size: 13px; }
 .carte { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 8px; overflow-x: auto; }
 .vide { color: var(--ink-2); padding: 40px; text-align: center; }
-#sankey svg { display: block; min-width: 720px; width: 100%; height: auto; }
+#sankey svg { display: block; max-width: none; height: auto; }
 #sankey text { fill: var(--ink); font-size: 12px; }
 #sankey text .montant { fill: var(--ink-2); }
-#sankey path.lien { fill: none; transition: stroke-opacity .12s; }
-#sankey .attenue path.lien { stroke-opacity: .08 !important; }
-#sankey .attenue path.lien.actif { stroke-opacity: .55 !important; }
+#sankey path.lien { transition: fill-opacity .12s; }
+#sankey .attenue path.lien { fill-opacity: .08 !important; }
+#sankey .attenue path.lien.actif { fill-opacity: .55 !important; }
 #sankey .cliquable { cursor: pointer; }
 #bulle { position: fixed; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--grid);
   border-radius: 8px; padding: 6px 10px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.12); display: none; z-index: 10; }
@@ -74,6 +74,14 @@ tr.cat { cursor: pointer; }
 tr.cat:hover td { background: var(--page); }
 tr.cat.choisi td { background: var(--page); }
 tr.sous td:first-child { padding-left: 24px; color: var(--ink-2); }
+tr.mag td { font-size: 13px; color: var(--ink-2); }
+tr.mag td:first-child { padding-left: 44px; }
+tr.mag.direct td:first-child { padding-left: 24px; }
+tr.cat .fleche { color: var(--muted); font-size: 11px; width: 10px; display: inline-block; }
+.puces { display: flex; flex-wrap: wrap; gap: 4px; }
+.puce { display: inline-flex; align-items: center; gap: 2px; background: var(--page); border: 1px solid var(--border); border-radius: 999px; padding: 1px 4px 1px 8px; font-size: 12px; }
+.puce button { border: none; background: none; padding: 0 4px; color: var(--muted); font-size: 13px; line-height: 1; }
+.puce button:hover { color: var(--alerte); }
 .legende { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 10px; font-size: 13px; color: var(--ink-2); }
 .legende span, td .nom { display: inline-flex; align-items: center; gap: 6px; }
 .pastille { width: 10px; height: 10px; border-radius: 3px; flex: none; }
@@ -133,7 +141,6 @@ button.danger { color: var(--alerte); }
   <section id="vue" class="cache">
     <div class="barre">
       <label>Mois <select id="periode"></select></label>
-      <label id="lab-sous" class="cache"><input type="checkbox" id="sous"> Sous-catégories</label>
       <button id="gerer">Gérer les catégories…</button>
       <button id="changer">Changer de fichier…</button>
     </div>
@@ -196,6 +203,17 @@ button.danger { color: var(--alerte); }
     <button type="submit">Ajouter la règle</button>
   </form>
   <table id="g-motifs"></table>
+
+  <h3>Enseignes (dernier niveau du détail)</h3>
+  <p class="aide">Quand on déplie une catégorie, chaque opération est rangée sous son enseigne si son libellé contient l'un de ces textes (en début de mot : « super u » reconnaît « SUPER U CENTRE-VILLE »). Sinon, le libellé est affiché tel quel.</p>
+  <form class="ligne-form" id="g-ens-ajout">
+    <input id="g-ens-texte" placeholder="Le libellé contient…" required autocomplete="off">
+    <span>→</span>
+    <input id="g-ens-nom" list="liste-enseignes" placeholder="Enseigne" required autocomplete="off">
+    <button type="submit">Ajouter</button>
+  </form>
+  <datalist id="liste-enseignes"></datalist>
+  <table id="g-enseignes"></table>
 
   <h3>Opérations catégorisées une par une</h3>
   <div id="g-manuels"></div>
@@ -352,6 +370,7 @@ async function charger(fichier) {
       const o = { date, mois: date.slice(0, 7), catOrig: g(col.categorie) || SANS_CAT, sousOrig: g(col.sous),
                   lib: lib || detail, detail: lib && detail !== lib ? detail : '', debit, credit };
       o.texte = normTexte(`${o.lib} ${o.detail}`);
+      o.mots = motsDe(`${o.lib} ${o.detail}`);
       o.cle = empreinte(`${o.date}|${o.lib}|${o.detail}|${o.debit}|${o.credit}|${o.catOrig}`);
       ops.push(o);
     }
@@ -388,10 +407,9 @@ function dessiner() {
   const ops = periode === 'moyenne' || periode === 'tout' ? etat.ops : etat.ops.filter(o => o.mois === periode);
   const parCat = {};
   ops.forEach(o => {
-    const s = etat.aSous && o.sous ? o.sous : '';
-    parCat[o.cat] ??= { v: 0, sous: {} };
-    parCat[o.cat].v += (o.debit - o.credit) / div;
-    parCat[o.cat].sous[s] = (parCat[o.cat].sous[s] || 0) + (o.debit - o.credit) / div;
+    const v = (o.debit - o.credit) / div, c = parCat[o.cat] ??= { v: 0, sous: {} };
+    const s = c.sous[o.sous || ''] ??= { v: 0, mags: {} };
+    c.v += v; s.v += v; s.mags[o.mag] = (s.mags[o.mag] || 0) + v;
   });
   const cats = Object.entries(parCat).filter(([, d]) => d.v >= 0.5).sort((a, b) => b[1].v - a[1].v);
   const enCredit = Object.entries(parCat).filter(([, d]) => d.v <= -0.5).sort((a, b) => a[1].v - b[1].v);
@@ -400,9 +418,9 @@ function dessiner() {
 
   const C = { total: css('--c-total'), classer: css('--c-classer'), autre: css('--s-autre') };
   const couleur = c => c === SANS_CAT ? C.classer : etat.couleurs[c] ? css(etat.couleurs[c]) : C.autre;
-  const detail = etat.aSous && $('sous').checked;
+  const ouverte = etat.filtre;
 
-  // Sankey : dépenses -> catégories (-> sous-catégories)
+  // Sankey : dépenses -> catégories ; la catégorie dépliée -> sous-catégories -> enseignes
   if (cats.length) {
     const noeuds = [], idx = {};
     const noeud = (cle, nom, coul, col, cat) => { if (!(cle in idx)) { idx[cle] = noeuds.length; noeuds.push({ nom, coul, col, cat, entree: [], sortie: [] }); } return idx[cle]; };
@@ -410,9 +428,15 @@ function dessiner() {
     const racine = noeud('total', periode === 'moyenne' ? 'Dépenses / mois' : 'Dépenses', C.total, 0);
     cats.forEach(([c, d]) => {
       const coul = couleur(c), n = noeud('c:' + c, c, coul, 1, c);
+      noeuds[n].ouverte = c === ouverte;
       lien(racine, n, d.v, coul);
-      const sous = Object.entries(d.sous).filter(([s, v]) => s && v >= 0.5);
-      if (detail && sous.length) sous.sort((a, b) => b[1] - a[1]).forEach(([s, v]) => lien(n, noeud('s:' + c + ':' + s, s, coul, 2, c), v, coul));
+      if (c !== ouverte) return;
+      const sous = detailCategorie(d);
+      sous.forEach(({ nom, v, mags }) => {
+        const ns = nom === null ? n : noeud('s:' + c + ':' + nom, nom, coul, 2);
+        if (nom !== null) lien(n, ns, v, coul);
+        mags.forEach(([m, mv]) => lien(ns, noeud('m:' + c + ':' + nom + ':' + m, m, coul, nom === null ? 2 : 3), mv, coul));
+      });
     });
     dessinerSankey(noeuds, Math.max(...noeuds.map(n => n.col)) + 1);
   } else $('sankey').innerHTML = '<p class="vide">Aucune dépense sur cette période.</p>';
@@ -432,17 +456,20 @@ function dessiner() {
     ['Opérations au débit', String(periode === 'moyenne' ? Math.round(nbDep / div) : nbDep), periode === 'moyenne' ? 'en moyenne par mois' : `sur ${ops.length} opérations`],
   ].map(([l, v, d]) => `<div class="tuile"><div class="lib">${l}</div><div class="val">${v}</div><div class="det">${esc(d)}</div></div>`).join('');
 
-  // Tableau des catégories (clic = filtre des opérations)
+  // Tableau des catégories (clic = déplier le détail et filtrer les opérations)
   let h = `<tr><th>Catégorie</th><th class="num">Montant</th><th class="num">Part</th></tr>`;
   cats.forEach(([c, d]) => {
-    h += `<tr class="cat${etat.filtre === c ? ' choisi' : ''}" data-cat="${esc(c)}" title="Voir les opérations"><td><span class="nom"><span class="pastille" style="background:${couleur(c)}"></span>${esc(c)}</span></td><td class="num">${eur(d.v)}</td><td class="num">${pct(d.v, total)}</td></tr>`;
-    if (detail) Object.entries(d.sous).filter(([s, v]) => s && v >= 0.5).sort((a, b) => b[1] - a[1]).forEach(([s, v]) =>
-      h += `<tr class="sous"><td>${esc(s)}</td><td class="num">${eur(v)}</td><td class="num">${pct(v, total)}</td></tr>`);
+    const ouv = c === ouverte;
+    h += `<tr class="cat${ouv ? ' choisi' : ''}" data-cat="${esc(c)}" title="${ouv ? 'Replier' : 'Voir le détail'}" aria-expanded="${ouv}"><td><span class="nom"><span class="fleche">${ouv ? '▾' : '▸'}</span><span class="pastille" style="background:${couleur(c)}"></span>${esc(c)}</span></td><td class="num">${eur(d.v)}</td><td class="num">${pct(d.v, total)}</td></tr>`;
+    if (ouv) detailCategorie(d).forEach(({ nom, v, mags }) => {
+      if (nom !== null) h += `<tr class="sous"><td>${esc(nom)}</td><td class="num">${eur(v)}</td><td class="num">${pct(v, total)}</td></tr>`;
+      mags.forEach(([m, mv]) => h += `<tr class="mag${nom === null ? ' direct' : ''}"><td>${esc(m)}</td><td class="num">${eur(mv)}</td><td class="num">${pct(mv, total)}</td></tr>`);
+    });
   });
   $('tableau').innerHTML = h;
 
   // Note
-  const notes = [];
+  const notes = ['Cliquez sur une catégorie pour voir son détail.'];
   if (periode === 'moyenne') notes.push(`Moyenne : total de chaque catégorie divisé par ${etat.mois.length} mois (le premier et le dernier mois du fichier peuvent être incomplets).`);
   notes.push('Les crédits d\'une catégorie de dépense (remboursements, avoirs) viennent en déduction de cette catégorie.');
   if (enCredit.length) notes.push(`Non affichées car en crédit net : ${enCredit.map(([c, d]) => `${c} (+${eur(-d.v)})`).join(', ')}.`);
@@ -468,33 +495,85 @@ function dessinerOperations(ops, couleur) {
 function filtrer(cat) {
   etat.filtre = etat.filtre === cat ? null : cat;
   dessiner();
-  if (etat.filtre) $('operations').closest('details').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // Écran étroit : le graphique déborde, on fait défiler la carte jusqu'au détail
+  const carte = $('sankey').parentElement;
+  carte.scrollLeft = etat.filtre ? carte.scrollWidth : 0;
+}
+
+// Détail d'une catégorie : sous-catégories (si le fichier en a) puis enseignes, les 8 plus grosses + « Autres »
+function detailCategorie(d) {
+  const MAX = 8;
+  const sous = Object.entries(d.sous).filter(([, s]) => s.v >= 0.5).sort((a, b) => b[1].v - a[1].v);
+  const sansSous = sous.every(([s]) => !s);
+  return sous.map(([s, sd]) => {
+    const mags = Object.entries(sd.mags).filter(([, v]) => v >= 0.5).sort((a, b) => b[1] - a[1]);
+    if (mags.length > MAX + 1) {
+      const reste = mags.splice(MAX);
+      mags.push([`Autres (${reste.length})`, reste.reduce((a, [, v]) => a + v, 0)]);
+    }
+    return { nom: sansSous ? null : (s || 'Sans sous-catégorie'), v: sd.v, mags };
+  });
 }
 
 function dessinerSankey(noeuds, nbCols) {
-  // Largeur réelle de la carte : le texte garde sa taille, quel que soit l'écran
-  const W = Math.max(720, Math.min(1240, $('sankey').clientWidth || 1240)), PAD = 6, EP = 12, G = 150, D = nbCols > 2 ? 260 : 300;
+  const PAD = 6, EP = 12, MIN = 18;   // MIN : hauteur minimale réservée à chaque libellé
   noeuds.forEach(n => n.v = Math.max(n.entree.reduce((a, l) => a + l.v, 0), n.sortie.reduce((a, l) => a + l.v, 0)));
   const cols = Array.from({ length: nbCols }, (_, i) => noeuds.filter(n => n.col === i));
-  const H = Math.max(420, Math.max(...cols.map(c => c.length)) * 26);
-  const k = Math.min(...cols.filter(c => c.length).map(c => (H - PAD * 2 * (c.length - 1)) / c.reduce((a, n) => a + n.v, 0)));
-  const xs = Array.from({ length: nbCols }, (_, i) => G + i * (W - G - D) / (nbCols - 1));
+
+  // Largeurs : chaque colonne laisse la place à ses libellés ; s'il reste de la place, elle va aux liens
+  const ctx = dessinerSankey.ctx ??= document.createElement('canvas').getContext('2d');
+  ctx.font = '12px system-ui, -apple-system, "Segoe UI", sans-serif';
+  const libelle = n => `${n.cat ? '▸ ' : ''}${n.nom} ${eur(n.v)}`;
+  const largeur = c => Math.max(0, ...c.map(n => ctx.measureText(libelle(n)).width));
+  const G = largeur(cols[0]) + 14, D = largeur(cols[nbCols - 1]) + 16;
+  const ecarts = cols.slice(0, -1).map((c, i) => Math.max(90, (i ? largeur(c) + 30 : 0) + 60));
+  const minimum = G + ecarts.reduce((a, e) => a + e, 0) + EP + D;
+  const W = Math.max(minimum, Math.min(1240, $('sankey').clientWidth || 1240));
+  const bonus = (W - minimum) / ecarts.length;
+  const xs = [G];
+  ecarts.forEach((e, i) => xs.push(xs[i] + e + bonus));
+
+  // Échelle principale (colonnes 0 et 1) ; le détail de la catégorie ouverte a sa propre échelle, plus grande
+  let H = Math.max(420, Math.max(...cols.map(c => c.length)) * MIN + 20);
+  const somme = c => c.reduce((a, n) => a + n.v, 0);
+  const k = Math.min(...cols.slice(0, 2).filter(c => c.length).map(c => (H - PAD * 2 * (c.length - 1)) / somme(c)));
+  const ouverte = noeuds.find(n => n.ouverte), detail = cols.slice(2).filter(c => c.length);
+  let kd = k;
+  if (ouverte && detail.length) {
+    const place = Math.min(...detail.map(c => (H - MIN * c.length) / Math.max(somme(c), 0.01)));
+    kd = Math.max(k, Math.min(0.6 * H / ouverte.v, place));
+  }
+  const echelle = n => n.col >= 2 ? kd : k;
+
+  // Placement vertical : colonnes 0 et 1 centrées ; le détail centré sur la catégorie ouverte
+  const poser = (c, haut) => { let y = haut; c.forEach(n => { n.h = Math.max(n.v * echelle(n), 1); n.y = y + Math.max(0, (MIN - n.h - PAD * 2) / 2); y += Math.max(n.h + PAD * 2, MIN); n.yo = n.y; n.yi = n.y; }); return y - PAD * 2; };
+  const etendue = c => c.reduce((a, n) => a + Math.max(Math.max(n.v * echelle(n), 1) + PAD * 2, MIN), 0) - PAD * 2;
+  H = Math.max(H, ...cols.map(etendue));
   cols.forEach((c, i) => {
-    let y = (H - c.reduce((a, n) => a + n.v * k, 0) - PAD * 2 * (c.length - 1)) / 2;
-    c.forEach(n => { n.x = xs[i]; n.y = y; n.h = Math.max(n.v * k, 1); y += n.h + PAD * 2; n.yo = n.y; n.yi = n.y; });
+    c.forEach(n => n.x = xs[i]);
+    const e = etendue(c);
+    let haut = (H - e) / 2;
+    if (i >= 2 && ouverte) haut = Math.min(Math.max(ouverte.y + ouverte.h / 2 - e / 2, 0), H - e);
+    poser(c, haut);
   });
+
   const ns = 'http://www.w3.org/2000/svg', el = (t, a) => { const e = document.createElementNS(ns, t); for (const [x, v] of Object.entries(a)) e.setAttribute(x, v); return e; };
-  const svg = el('svg', { viewBox: `0 0 ${W} ${H + 8}`, role: 'img', 'aria-label': 'Diagramme de Sankey des dépenses par catégorie' });
+  const svg = el('svg', { viewBox: `0 0 ${W} ${H + 8}`, width: W, role: 'img', 'aria-label': 'Diagramme de Sankey des dépenses par catégorie' });
+  svg.style.width = W + 'px';
   const gL = el('g', {}), gN = el('g', {});
   svg.append(gL, gN);
   const bulle = $('bulle');
   const montrer = (e, html) => { bulle.innerHTML = html; bulle.style.display = 'block'; bulle.style.left = (e.clientX + 14) + 'px'; bulle.style.top = (e.clientY + 14) + 'px'; };
   const cacher = () => { bulle.style.display = 'none'; svg.classList.remove('attenue'); gL.querySelectorAll('.actif').forEach(p => p.classList.remove('actif')); };
 
+  // Liens en rubans : leur épaisseur passe de l'échelle de la source à celle de la cible (effet de zoom sur le détail)
   noeuds.forEach(n => n.sortie.forEach(l => {
-    const c = l.cible, h = l.v * k, x0 = n.x + EP, x1 = c.x, y0 = n.yo + h / 2, y1 = c.yi + h / 2, xm = (x0 + x1) / 2;
-    n.yo += h; c.yi += h;
-    const p = el('path', { class: 'lien', d: `M${x0},${y0} C${xm},${y0} ${xm},${y1} ${x1},${y1}`, stroke: l.coul, 'stroke-opacity': 0.28, 'stroke-width': Math.max(h, 1) });
+    const c = l.cible, hs = l.v * echelle(n), ht = l.v * echelle(c), x0 = n.x + EP, x1 = c.x, xm = (x0 + x1) / 2;
+    const ys = n.yo, yt = c.yi;
+    n.yo += hs; c.yi += ht;
+    const ep = Math.max(hs, 0.8), ept = Math.max(ht, 0.8);
+    const p = el('path', { class: 'lien', fill: l.coul, 'fill-opacity': 0.28,
+      d: `M${x0},${ys} C${xm},${ys} ${xm},${yt} ${x1},${yt} L${x1},${yt + ept} C${xm},${yt + ept} ${xm},${ys + ep} ${x0},${ys + ep} Z` });
     l.el = p;
     p.addEventListener('mousemove', e => { svg.classList.add('attenue'); p.classList.add('actif'); montrer(e, `${esc(n.nom)} → ${esc(c.nom)}<b>${eur(l.v)}</b>`); });
     p.addEventListener('mouseleave', cacher);
@@ -506,7 +585,8 @@ function dessinerSankey(noeuds, nbCols) {
     zone.addEventListener('mouseleave', cacher);
     const gauche = n.col === 0;
     const t = el('text', { x: gauche ? n.x - 6 : n.x + EP + 6, y: n.y + n.h / 2, 'dominant-baseline': 'middle', 'text-anchor': gauche ? 'end' : 'start' });
-    t.innerHTML = `${esc(n.nom)} <tspan class="montant">${eur(n.v)}</tspan>`;
+    t.innerHTML = `${n.cat ? `<tspan class="montant">${n.ouverte ? '▾' : '▸'}</tspan> ` : ''}${esc(n.nom)} <tspan class="montant">${eur(n.v)}</tspan>`;
+    if (n.cat) { const ti = el('title', {}); ti.textContent = n.ouverte ? 'Replier' : 'Voir le détail'; t.append(ti); }
     if (n.cat) [zone, t].forEach(x => { x.classList.add('cliquable'); x.addEventListener('click', () => filtrer(n.cat)); });
     gN.append(el('rect', { x: n.x, y: n.y, width: EP, height: n.h, rx: 3, fill: n.coul }), zone, t);
   });
@@ -520,7 +600,19 @@ const empreinte = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) 
 // Catégories proposées par défaut (modifiables dans le gestionnaire)
 const CATEGORIES_DEFAUT = ['Alimentation', 'Enfant', 'Santé', 'Cafés', 'EDF', 'Essence', 'Maison', 'Restaurants', 'Téléphones',
   'Internet', 'Parapharma', 'Cadeaux', 'Snacks', 'Loisir', 'Bar', 'Banque', 'Parking', 'Transports'];
-const reglesVides = () => ({ categories: [...CATEGORIES_DEFAUT], fusions: {}, motifs: [], operations: {} });
+// Enseignes reconnues par défaut pour le dernier niveau du détail (texte cherché en début de mot → enseigne)
+const ENSEIGNES_DEFAUT = [
+  ['super u', 'Super U'], ['magasin u', 'Super U'], ['hyper u', 'Super U'], ['u express', 'Super U'], ['marche u', 'Super U'],
+  ['intermarche', 'Intermarché'], ['leclerc', 'E.Leclerc'], ['carrefour', 'Carrefour'], ['auchan', 'Auchan'],
+  ['lidl', 'Lidl'], ['aldi', 'Aldi'], ['picard', 'Picard'], ['monoprix', 'Monoprix'], ['franprix', 'Franprix'],
+  ['biocoop', 'Biocoop'], ['grand frais', 'Grand Frais'], ['netto', 'Netto'], ['naturalia', 'Naturalia'],
+  ['mcdonald', "McDonald's"], ['mc donald', "McDonald's"], ['totalenergies', 'TotalEnergies'], ['esso', 'Esso'],
+  ['sncf', 'SNCF'], ['amazon', 'Amazon'], ['decathlon', 'Decathlon'], ['ikea', 'Ikea'],
+  ['leroy merlin', 'Leroy Merlin'], ['castorama', 'Castorama'], ['fnac', 'Fnac'],
+].map(([texte, enseigne]) => ({ texte, enseigne }));
+const reglesVides = () => ({ categories: [...CATEGORIES_DEFAUT], fusions: {}, motifs: [], operations: {}, enseignes: ENSEIGNES_DEFAUT.map(e => ({ ...e })) });
+// Mots du libellé, sans accents ni ponctuation, encadrés d'espaces : « E.LECLERC » → « e leclerc »
+const motsDe = s => ' ' + norm(s).replace(/[^a-z0-9]+/g, ' ').trim() + ' ';
 function lireRegles(r) {
   const ok = r && typeof r === 'object' ? r : {};
   const chaines = o => Object.fromEntries(Object.entries(o && typeof o === 'object' ? o : {}).filter(([k, v]) => k && typeof v === 'string' && v.trim()));
@@ -529,6 +621,10 @@ function lireRegles(r) {
     motifs: (Array.isArray(ok.motifs) ? ok.motifs : []).filter(m => m && typeof m.texte === 'string' && m.texte.trim() && typeof m.categorie === 'string' && m.categorie.trim())
       .map(m => ({ texte: m.texte.trim(), categorie: m.categorie.trim() })),
     operations: chaines(ok.operations),
+    enseignes: Array.isArray(ok.enseignes)
+      ? ok.enseignes.filter(e => e && typeof e.texte === 'string' && motsDe(e.texte).trim() && typeof e.enseigne === 'string' && e.enseigne.trim())
+          .map(e => ({ texte: e.texte.trim(), enseigne: e.enseigne.trim() }))
+      : ENSEIGNES_DEFAUT.map(e => ({ ...e })),
     categories: Array.isArray(ok.categories)
       ? [...new Set(ok.categories.filter(c => typeof c === 'string' && c.trim()).map(c => c.trim()))]
       : [...CATEGORIES_DEFAUT],
@@ -541,6 +637,7 @@ function sauverRegles() { try { localStorage.setItem(CLE_REGLES, JSON.stringify(
 // Suit les fusions (A → B → C) sans boucler
 function fusionner(c) { const vus = new Set(); while (regles.fusions[c] && !vus.has(c)) { vus.add(c); c = regles.fusions[c]; } return c; }
 const motifPour = o => regles.motifs.find(m => o.texte.includes(normTexte(m.texte)));
+const enseignePour = o => regles.enseignes.find(e => o.mots.includes(' ' + motsDe(e.texte).trim()));
 
 function appliquerRegles() {
   for (const o of etat.ops) {
@@ -549,7 +646,9 @@ function appliquerRegles() {
     else if ((motif = motifPour(o))) { cat = motif.categorie; sous = ''; source = 'regle'; }
     const fin = fusionner(cat);
     if (fin !== cat) { if (!sous) sous = cat; source ||= 'fusion'; }   // la catégorie fusionnée devient la sous-catégorie
-    Object.assign(o, { cat: fin, sous, source, motif: motif ? motif.texte : '' });
+    const ens = enseignePour(o);
+    Object.assign(o, { cat: fin, sous, source, motif: motif ? motif.texte : '',
+                       mag: ens ? ens.enseigne : (motifSuggere(o.lib) || 'Sans libellé') });
   }
   // Une teinte par catégorie, fixée sur l'ensemble du fichier (les 8 plus grosses), le reste en gris
   const net = {};
@@ -558,7 +657,7 @@ function appliquerRegles() {
   Object.entries(net).filter(([c, v]) => v > 0 && c !== SANS_CAT).sort((a, b) => b[1] - a[1])
     .slice(0, 8).forEach(([c], i) => etat.couleurs[c] = `--s${i + 1}`);
   etat.aSous = etat.ops.some(o => o.sous);
-  $('lab-sous').classList.toggle('cache', !etat.aSous);
+  $('liste-enseignes').innerHTML = [...new Set(regles.enseignes.map(e => e.enseigne))].map(e => `<option value="${esc(e)}">`).join('');
   $('liste-cats').innerHTML = toutesCategories().map(c => `<option value="${esc(c)}">`).join('');
 }
 
@@ -657,6 +756,16 @@ function dessinerGestion() {
       }).join('')
     : '<tr><td class="vide-liste">Aucune règle pour l\'instant.</td></tr>';
 
+  const parEns = {};
+  regles.enseignes.forEach((e, i) => (parEns[e.enseigne] ??= []).push([e.texte, i]));
+  const nbEns = {};
+  etat.ops.forEach(o => { if (enseignePour(o)) nbEns[o.mag] = (nbEns[o.mag] || 0) + 1; });
+  $('g-enseignes').innerHTML = Object.keys(parEns).length
+    ? `<tr><th>Enseigne</th><th>Textes reconnus</th><th class="num">Opérations</th></tr>` +
+      Object.entries(parEns).sort((a, b) => a[0].localeCompare(b[0], 'fr')).map(([e, textes]) =>
+        `<tr><td>${esc(e)}</td><td><div class="puces">${textes.map(([x, i]) => `<span class="puce">${esc(x)}<button data-ens-suppr="${i}" title="Retirer « ${esc(x)} »" aria-label="Retirer ${esc(x)}">×</button></span>`).join('')}</div></td><td class="num">${nbEns[e] || '—'}</td></tr>`).join('')
+    : '<tr><td class="vide-liste">Aucune enseigne : le détail affiche les libellés tels quels.</td></tr>';
+
   const nbManuels = Object.keys(regles.operations).length, ici = etat.ops.filter(o => o.source === 'manuel').length;
   $('g-manuels').innerHTML = nbManuels
     ? `<div class="ligne-form"><span>${nbManuels} opération${nbManuels > 1 ? 's' : ''} catégorisée${nbManuels > 1 ? 's' : ''} une par une (${ici} dans ce fichier).</span><button class="lien-btn danger" id="g-manuels-reset">Tout annuler</button></div>`
@@ -711,6 +820,18 @@ $('g-ajout').addEventListener('submit', e => {
   $('g-texte').value = ''; $('g-cat').value = '';
   majTout();
 });
+$('g-enseignes').addEventListener('click', e => {
+  const i = e.target.dataset.ensSuppr;
+  if (i !== undefined) { regles.enseignes.splice(+i, 1); majTout(); }
+});
+$('g-ens-ajout').addEventListener('submit', e => {
+  e.preventDefault();
+  const texte = $('g-ens-texte').value.trim(), enseigne = $('g-ens-nom').value.trim();
+  if (!motsDe(texte).trim() || !enseigne) return;
+  regles.enseignes = [...regles.enseignes.filter(x => motsDe(x.texte) !== motsDe(texte)), { texte, enseigne }];
+  $('g-ens-texte').value = ''; $('g-ens-nom').value = '';
+  majTout();
+});
 $('g-manuels').addEventListener('click', e => {
   if (e.target.id === 'g-manuels-reset' && confirm('Annuler toutes les catégorisations faites opération par opération ?')) { regles.operations = {}; majTout(); }
 });
@@ -730,6 +851,8 @@ $('g-fichier').addEventListener('change', async e => {
     Object.assign(regles.fusions, r.fusions);
     Object.assign(regles.operations, r.operations);
     r.categories.forEach(ajouterALaListe);
+    const ensDeja = new Set(regles.enseignes.map(x => motsDe(x.texte)));
+    regles.enseignes.push(...r.enseignes.filter(x => !ensDeja.has(motsDe(x.texte))));
     const deja = new Set(regles.motifs.map(m => normTexte(m.texte)));
     regles.motifs.push(...r.motifs.filter(m => !deja.has(normTexte(m.texte))));
     majTout();
@@ -746,7 +869,6 @@ $('choisir').addEventListener('click', ouvrir);
 $('changer').addEventListener('click', ouvrir);
 $('fichier').addEventListener('change', e => { if (e.target.files[0]) charger(e.target.files[0]); e.target.value = ''; });
 sel.addEventListener('change', () => { etat.filtre = null; dessiner(); });
-$('sous').addEventListener('change', dessiner);
 $('tableau').addEventListener('click', e => { const tr = e.target.closest('tr.cat'); if (tr) filtrer(tr.dataset.cat); });
 $('filtre').addEventListener('click', e => { if (e.target.id === 'tout-voir') { e.preventDefault(); filtrer(etat.filtre); } });
 document.addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('survol'); });
